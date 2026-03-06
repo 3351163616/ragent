@@ -1,14 +1,29 @@
-# Ragent
+# Ragent AI
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Java](https://img.shields.io/badge/Java-17-ff7f2a.svg)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6db33f.svg)
-![React](https://img.shields.io/badge/React-18-61dafb.svg)
 ![Milvus](https://img.shields.io/badge/Milvus-2.6.x-00b3ff.svg)
+![React](https://img.shields.io/badge/React-18-61dafb.svg)
 
-> 企业级 RAG 智能体平台
->
-> 纯手搓，一套真正能落地、经得起生产检验的 Agentic RAG 系统。深入底层设计，覆盖全链路核心能力，拒绝 Demo 玩具。校招社招通用，直接写进简历！
+> 从 0 到 1 纯手工打造，一套真正能落地、经得起推敲的 Agentic RAG 系统。深入底层设计细节，覆盖全链路核心能力。配套完整的 RAG 学习路线、项目实战、部署教程与简历写法。
+
+新年气象，2026 年春节假期最后一天，企业级 AI RAG 正式发布！
+
+作为拿个 offer 社群在 AI 领域的第一个项目，从架构设计到每一行代码都反复打磨，质量标准对齐之前 12306、短链接等项目，不砸自己招牌。
+
+## 项目说明
+
+先和大家说一声，**项目开源地址认准 GitHub**，别走丢啦 👀 后续源码更新、版本发布、问题修复，都会优先同步在 GitHub 仓库。
+
+- **GitHub**：https://github.com/nageoffer/ragent
+- **官方文档**：https://nageoffer.com/ragent
+
+如果你想系统补上 RAG / Agent / MCP 这块知识，或者想做一个真正能写进简历、面试里聊得起来的 AI 项目，Ragent 希望给你的，不只是一个“能跑起来”的 Demo，而是一套更接近真实工程落地的完整实践。
+
+官方文档里整理了 **什么是 RAG、如何在简历中写 RAG 项目、Prompt 入门、文档解析、Chunk 策略、Embedding、向量数据库、检索与生成策略、MCP、从零启动项目、Docker 部署** 等内容，适合边学边做，边做边写进简历。
+
+**欢迎顺手点个 Star 支持一下呀 ⭐** 你的每一个 Star，都是我持续打磨这个项目的动力 💪
 
 ## 目录
 
@@ -18,10 +33,6 @@
 - [Ragent 核心设计](#ragent-核心设计)
 - [项目质量怎么样？](#项目质量怎么样)
 - [常见问题答疑](#常见问题答疑)
-
-新年气象，2026 年春节假期最后一天，企业级 AI RAG 正式发布！
-
-作为拿个 offer 社群在 AI 领域的第一个项目，从架构设计到每一行代码都反复打磨，质量标准对齐之前 12306、短链接等项目，不砸自己招牌。
 
 ## 为什么学习 AI 项目
 
