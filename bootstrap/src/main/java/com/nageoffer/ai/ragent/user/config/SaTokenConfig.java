@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.user.config;
 
 import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.stp.StpUtil;
+import com.nageoffer.ai.ragent.rag.config.DemoModeInterceptor;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 @RequiredArgsConstructor
 public class SaTokenConfig implements WebMvcConfigurer {
+
+    /**
+     * 体验环境只读模式拦截器
+     */
+    private final DemoModeInterceptor demoModeInterceptor;
 
     /**
      * 用户上下文拦截器
@@ -66,6 +72,13 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     // 执行登录检查
                     StpUtil.checkLogin();
                 }))
+                // 拦截所有路径
+                .addPathPatterns("/**")
+                // 排除认证相关路径和错误页面
+                .excludePathPatterns("/auth/**", "/error");
+
+        // 注册体验环境只读模式拦截器
+        registry.addInterceptor(demoModeInterceptor)
                 // 拦截所有路径
                 .addPathPatterns("/**")
                 // 排除认证相关路径和错误页面

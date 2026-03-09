@@ -25,7 +25,10 @@
       "WebFetch(domain:spring.io)",
       "Bash(gh api:*)",
       "Bash(gh auth:*)",
-      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home mvn clean:*)"
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home mvn clean:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(gh release:*)"
     ]
   }
 }
