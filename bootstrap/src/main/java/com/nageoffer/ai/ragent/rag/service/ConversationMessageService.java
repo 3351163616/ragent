@@ -37,11 +37,12 @@ public interface ConversationMessageService {
      * 获取对话消息列表（支持排序与数量限制）
      *
      * @param conversationId 对话ID
+     * @param userId         用户ID
      * @param limit          限制数量
      * @param order          排序方式
      * @return 对话消息列表
      */
-    List<ConversationMessageVO> listMessages(String conversationId, Integer limit, ConversationMessageOrder order);
+    List<ConversationMessageVO> listMessages(String conversationId, String userId, Integer limit, ConversationMessageOrder order);
 
     /**
      * 添加对话摘要

@@ -38,7 +38,7 @@ public class ConversationMessageServiceTests {
 
     @Test
     public void listMessagesTest() {
-        List<ConversationMessageVO> conversationMessageVOList = conversationMessageService.listMessages("2002713020947939330", 6, ConversationMessageOrder.DESC);
+        List<ConversationMessageVO> conversationMessageVOList = conversationMessageService.listMessages("2002713020947939330", "admin", 6, ConversationMessageOrder.DESC);
         log.info("conversationMessageVOList: {}", JSONUtil.toJsonStr(conversationMessageVOList));
     }
 }

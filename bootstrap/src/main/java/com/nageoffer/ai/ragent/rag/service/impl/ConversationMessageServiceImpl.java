@@ -28,7 +28,6 @@ import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMessageMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationSummaryMapper;
 import com.nageoffer.ai.ragent.rag.enums.ConversationMessageOrder;
-import com.nageoffer.ai.ragent.framework.context.UserContext;
 import com.nageoffer.ai.ragent.rag.service.MessageFeedbackService;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationMessageBO;
@@ -58,8 +57,7 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
     }
 
     @Override
-    public List<ConversationMessageVO> listMessages(String conversationId, Integer limit, ConversationMessageOrder order) {
-        String userId = UserContext.getUserId();
+    public List<ConversationMessageVO> listMessages(String conversationId, String userId, Integer limit, ConversationMessageOrder order) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {
             return List.of();
         }
