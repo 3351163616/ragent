@@ -60,4 +60,18 @@ public enum ProcessMode {
         }
         return null;
     }
+
+    /**
+     * 解析处理模式，为空时返回默认值 {@link #CHUNK}，非法值抛出异常
+     */
+    public static ProcessMode normalize(String value) {
+        if (value == null || value.isBlank()) {
+            return CHUNK;
+        }
+        ProcessMode result = fromValue(value);
+        if (result == null) {
+            throw new IllegalArgumentException("不支持的处理模式: " + value);
+        }
+        return result;
+    }
 }

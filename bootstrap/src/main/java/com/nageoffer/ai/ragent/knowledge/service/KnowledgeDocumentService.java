@@ -44,11 +44,19 @@ public interface KnowledgeDocumentService {
     KnowledgeDocumentVO upload(String kbId, KnowledgeDocumentUploadRequest requestParam, MultipartFile file);
 
     /**
-     * 开始文档分片处理
+     * 开始文档分片处理（校验状态并发送 MQ 消息，立即返回）
      *
      * @param docId 文档 ID
      */
     void startChunk(String docId);
+
+    /**
+     * 执行文档分块（由 MQ 消费者调用）
+     * 获取分布式锁 → 清理历史分块和向量 → 执行完整分块流程
+     *
+     * @param docId 文档 ID
+     */
+    void executeChunk(String docId);
 
     /**
      * 删除文档
