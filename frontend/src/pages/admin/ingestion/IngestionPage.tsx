@@ -59,7 +59,7 @@ const STATUS_OPTIONS = [
 
 const SOURCE_OPTIONS = [
   { value: "file", label: "Local File" },
-  { value: "url", label: "URL" },
+  { value: "url", label: "Remote URL" },
   { value: "feishu", label: "Feishu" },
   { value: "s3", label: "S3" }
 ];

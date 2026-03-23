@@ -101,7 +101,13 @@ public class IndexerNode implements IngestionNode {
 
         ensureVectorSpace(collectionName);
         List<JsonObject> rows = buildRows(context, chunks, vectorArray, settings.getMetadataFields());
-        insertRows(collectionName, rows);
+
+        if (context.isSkipIndexerWrite()) {
+            // 调用方会在事务中统一写向量，此处只做校验和 chunkId/embedding 的填充（buildRows 已完成）
+            return NodeResult.ok("已准备 " + rows.size() + " 个分块（向量写入由调用方统一完成）");
+        }
+
+        insertRows(collectionName, context.getTaskId(), rows);
         return NodeResult.ok("已写入 " + rows.size() + " 个分块到集合 " + collectionName);
     }
 
@@ -136,14 +142,14 @@ public class IndexerNode implements IngestionNode {
         vectorStoreAdmin.ensureVectorSpace(spaceSpec);
     }
 
-    private void insertRows(String collectionName, List<JsonObject> rows) {
+    private void insertRows(String collectionName, String docId, List<JsonObject> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
 
         // 将 JsonObject 转换为 VectorChunk 列表
         List<VectorChunk> chunks = rows.stream().map(row -> {
-            String chunkId = row.get("doc_id").getAsString();
+            String chunkId = row.get("id").getAsString();
             String content = row.get("content").getAsString();
             JsonArray embeddingArray = row.getAsJsonArray("embedding");
             float[] embedding = new float[embeddingArray.size()];
@@ -167,8 +173,7 @@ public class IndexerNode implements IngestionNode {
                     .build();
         }).toList();
 
-        // 使用VectorStoreService接口写入，kbId使用collectionName作为标识
-        vectorStoreService.indexDocumentChunks(collectionName, "pipeline", chunks);
+        vectorStoreService.indexDocumentChunks(collectionName, docId, chunks);
 
         log.info("向量写入成功，集合={}，行数={}", collectionName, chunks.size());
     }
@@ -248,7 +253,7 @@ public class IndexerNode implements IngestionNode {
             }
 
             JsonObject row = new JsonObject();
-            row.addProperty("doc_id", chunkId);
+            row.addProperty("id", chunkId);
             row.addProperty("content", content);
             row.add("metadata", metadata);
             row.add("embedding", toJsonArray(vectors[i]));

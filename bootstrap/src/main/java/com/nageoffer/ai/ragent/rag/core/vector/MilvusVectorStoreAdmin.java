@@ -57,7 +57,7 @@ public class MilvusVectorStoreAdmin implements VectorStoreAdmin {
 
         fieldSchemaList.add(
                 CreateCollectionReq.FieldSchema.builder()
-                        .name("doc_id")
+                        .name("id")
                         .dataType(DataType.VarChar)
                         .maxLength(36)
                         .isPrimaryKey(true)
@@ -108,7 +108,7 @@ public class MilvusVectorStoreAdmin implements VectorStoreAdmin {
         CreateCollectionReq createReq = CreateCollectionReq.builder()
                 .collectionName(logicalName)
                 .collectionSchema(collectionSchema)
-                .primaryFieldName("doc_id")
+                .primaryFieldName("id")
                 .vectorFieldName("embedding")
                 .metricType(ragDefaultProperties.getMetricType())
                 .consistencyLevel(ConsistencyLevel.BOUNDED)

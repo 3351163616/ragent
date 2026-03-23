@@ -29,38 +29,34 @@ public interface VectorStoreService {
     /**
      * 批量建立文档的向量索引
      *
-     * @param kbId   知识库唯一标识
-     * @param docId  文档唯一标识
-     * @param chunks 文档切片列表，包含文本内容、chunk索引等信息
-     * @throws IllegalArgumentException 当参数为空或无效时抛出
+     * @param collectionName 向量空间名称（知识库 collectionName）
+     * @param docId          文档唯一标识
+     * @param chunks         文档切片列表，须包含已计算好的 embedding
      */
-    void indexDocumentChunks(String kbId, String docId, List<VectorChunk> chunks);
+    void indexDocumentChunks(String collectionName, String docId, List<VectorChunk> chunks);
 
     /**
      * 更新单个 chunk 的向量索引
      *
-     * @param kbId  知识库唯一标识
-     * @param docId 文档唯一标识
-     * @param chunk 待更新的文档切片，包含最新的文本内容
-     * @throws IllegalArgumentException 当参数为空或无效时抛出
+     * @param collectionName 向量空间名称（知识库 collectionName）
+     * @param docId          文档唯一标识
+     * @param chunk          待更新的文档切片，须包含最新的 embedding
      */
-    void updateChunk(String kbId, String docId, VectorChunk chunk);
+    void updateChunk(String collectionName, String docId, VectorChunk chunk);
 
     /**
      * 删除文档的所有向量索引
      *
-     * @param kbId  知识库唯一标识
-     * @param docId 文档唯一标识
-     * @throws IllegalArgumentException 当参数为空或无效时抛出
+     * @param collectionName 向量空间名称（知识库 collectionName）
+     * @param docId          文档唯一标识
      */
-    void deleteDocumentVectors(String kbId, String docId);
+    void deleteDocumentVectors(String collectionName, String docId);
 
     /**
      * 删除指定的单个 chunk 向量索引
      *
-     * @param kbId    知识库唯一标识
-     * @param chunkId chunk 的唯一标识
-     * @throws IllegalArgumentException 当参数为空或无效时抛出
+     * @param collectionName 向量空间名称（知识库 collectionName）
+     * @param chunkId        chunk 的唯一标识
      */
-    void deleteChunkById(String kbId, String chunkId);
+    void deleteChunkById(String collectionName, String chunkId);
 }

@@ -25,14 +25,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.tika.Tika;
 import org.springframework.stereotype.Service;
-import org.springframework.util.FileSystemUtils;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.file.Path;
 import java.util.UUID;
 
 @Service
@@ -82,7 +80,8 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
     @Override
     @SneakyThrows
     public void deleteByUrl(String url) {
-        FileSystemUtils.deleteRecursively(Path.of(url));
+        S3Location loc = parseS3Url(url);
+        s3Client.deleteObject(builder -> builder.bucket(loc.bucket()).key(loc.key()));
     }
 
     private String toS3Url(String bucket, String key) {

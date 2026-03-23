@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.knowledge.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentPageRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUploadRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUpdateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentVO;
@@ -107,11 +108,8 @@ public class KnowledgeDocumentController {
      */
     @GetMapping("/knowledge-base/{kb-id}/docs")
     public Result<IPage<KnowledgeDocumentVO>> page(@PathVariable(value = "kb-id") String kbId,
-                                                   @RequestParam(value = "pageNo", defaultValue = "1") int pageNo,
-                                                   @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
-                                                   @RequestParam(value = "status", required = false) String status,
-                                                   @RequestParam(value = "keyword", required = false) String keyword) {
-        return Results.success(documentService.page(kbId, new Page<>(pageNo, pageSize), status, keyword));
+                                                   KnowledgeDocumentPageRequest requestParam) {
+        return Results.success(documentService.page(kbId, requestParam));
     }
 
     /**
@@ -138,8 +136,7 @@ public class KnowledgeDocumentController {
      */
     @GetMapping("/knowledge-base/docs/{docId}/chunk-logs")
     public Result<IPage<KnowledgeDocumentChunkLogVO>> getChunkLogs(@PathVariable String docId,
-                                                                   @RequestParam(value = "pageNo", defaultValue = "1") int pageNo,
-                                                                   @RequestParam(value = "pageSize", defaultValue = "10") int pageSize) {
-        return Results.success(documentService.getChunkLogs(docId, new Page<>(pageNo, pageSize)));
+                                                                   Page<KnowledgeDocumentChunkLogVO> page) {
+        return Results.success(documentService.getChunkLogs(docId, page));
     }
 }

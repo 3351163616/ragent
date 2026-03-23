@@ -118,4 +118,11 @@ public class IngestionContext {
      * 摄取过程中发生的异常信息
      */
     private Throwable error;
+
+    /**
+     * 是否跳过 IndexerNode 的向量写入
+     * 为 true 时，IndexerNode 仅做校验不执行写入，由调用方统一在事务中完成向量持久化
+     */
+    @Builder.Default
+    private boolean skipIndexerWrite = false;
 }

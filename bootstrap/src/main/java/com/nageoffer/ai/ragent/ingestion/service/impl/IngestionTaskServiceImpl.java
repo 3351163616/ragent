@@ -432,7 +432,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     }
 
     /**
-     * 截断过大的输出 JSON，防止超过 MySQL 的 max_allowed_packet 限制
+     * 截断过大的输出 JSON，防止超过数据库的 max_allowed_packet 限制
      * 默认限制为 1MB
      */
     private String truncateOutputJson(Object output) {

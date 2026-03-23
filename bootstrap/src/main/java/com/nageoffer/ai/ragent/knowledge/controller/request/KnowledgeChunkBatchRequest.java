@@ -30,5 +30,5 @@ public class KnowledgeChunkBatchRequest {
     /**
      * Chunk ID 列表（可选，不传则操作文档下所有 chunk）
      */
-    private List<Long> chunkIds;
+    private List<String> chunkIds;
 }

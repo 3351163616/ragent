@@ -467,13 +467,12 @@ interface ChunkDialogProps {
   open: boolean;
   chunk?: KnowledgeChunk | null;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (payload: { content: string; index?: number | null; chunkId?: string }) => Promise<void>;
+  onSubmit: (payload: { content: string; index?: number | null }) => Promise<void>;
 }
 
 function ChunkDialog({ mode, open, chunk, onOpenChange, onSubmit }: ChunkDialogProps) {
   const [content, setContent] = useState("");
   const [indexValue, setIndexValue] = useState<string>("");
-  const [chunkId, setChunkId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -481,13 +480,10 @@ function ChunkDialog({ mode, open, chunk, onOpenChange, onSubmit }: ChunkDialogP
     if (mode === "edit") {
       setContent(chunk?.content || "");
       setIndexValue("");
-      setChunkId("");
       return;
     }
-    const generatedId = `${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
     setContent("");
     setIndexValue("");
-    setChunkId(generatedId);
   }, [open, mode, chunk]);
 
   const handleSubmit = async () => {
@@ -499,17 +495,11 @@ function ChunkDialog({ mode, open, chunk, onOpenChange, onSubmit }: ChunkDialogP
 
     const payload = {
       content: trimmed,
-      index: indexValue.trim() ? Number(indexValue) : undefined,
-      chunkId: mode === "create" ? chunkId.trim() : undefined
+      index: indexValue.trim() ? Number(indexValue) : undefined
     };
 
     if (payload.index !== undefined && Number.isNaN(payload.index)) {
       toast.error("索引必须是数字");
-      return;
-    }
-
-    if (mode === "create" && !payload.chunkId) {
-      toast.error("Chunk ID 不能为空");
       return;
     }
 
@@ -529,6 +519,7 @@ function ChunkDialog({ mode, open, chunk, onOpenChange, onSubmit }: ChunkDialogP
       <DialogContent
         className="sm:max-w-[760px] sm:min-h-[70vh] overflow-hidden flex flex-col max-h-[92vh]"
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => (document.activeElement as HTMLElement)?.blur()); }}
       >
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "新建分块" : "编辑分块"}</DialogTitle>
@@ -536,15 +527,9 @@ function ChunkDialog({ mode, open, chunk, onOpenChange, onSubmit }: ChunkDialogP
         </DialogHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-1 pb-3 sidebar-scroll">
           {mode === "create" ? (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Chunk ID（数字）</label>
-                <Input value={chunkId} onChange={(event) => setChunkId(event.target.value)} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">序号（可选）</label>
-                <Input value={indexValue} onChange={(event) => setIndexValue(event.target.value)} placeholder="例如：0" />
-              </div>
+            <div>
+              <label className="text-sm font-medium">序号（可选）</label>
+              <Input value={indexValue} onChange={(event) => setIndexValue(event.target.value)} placeholder="例如：0" />
             </div>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col">

@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.knowledge.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentPageRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUploadRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUpdateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentVO;
@@ -84,13 +85,11 @@ public interface KnowledgeDocumentService {
     /**
      * 分页查询文档
      *
-     * @param kbId    知识库 ID
-     * @param page    分页参数
-     * @param status  状态筛选
-     * @param keyword 关键词搜索
+     * @param kbId         知识库 ID
+     * @param requestParam 筛选参数
      * @return 文档分页结果
      */
-    IPage<KnowledgeDocumentVO> page(String kbId, Page<KnowledgeDocumentVO> page, String status, String keyword);
+    IPage<KnowledgeDocumentVO> page(String kbId, KnowledgeDocumentPageRequest requestParam);
 
     /**
      * 启用或禁用文档

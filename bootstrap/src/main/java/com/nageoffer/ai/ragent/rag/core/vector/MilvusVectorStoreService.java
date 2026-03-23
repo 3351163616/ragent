@@ -19,12 +19,12 @@ package com.nageoffer.ai.ragent.rag.core.vector;
 
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.IdUtil;
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
-import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
-import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
+import com.nageoffer.ai.ragent.rag.config.RAGDefaultProperties;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
@@ -46,18 +46,16 @@ import java.util.List;
 @ConditionalOnProperty(name = "rag.vector.type", havingValue = "milvus", matchIfMissing = true)
 public class MilvusVectorStoreService implements VectorStoreService {
 
+    private static final Gson GSON = new Gson();
+
     private final MilvusClientV2 milvusClient;
-    private final KnowledgeBaseMapper kbMapper;
+    private final RAGDefaultProperties ragDefaultProperties;
 
     @Override
-    public void indexDocumentChunks(String kbId, String docId, List<VectorChunk> chunks) {
+    public void indexDocumentChunks(String collectionName, String docId, List<VectorChunk> chunks) {
         Assert.isFalse(chunks == null || chunks.isEmpty(), () -> new ClientException("文档分块不允许为空"));
 
-        KnowledgeBaseDO kbDO = kbMapper.selectById(kbId);
-        Assert.isFalse(kbDO == null, () -> new ClientException("知识库不存在"));
-
-        // 维度校验（你的 schema dim=4096）
-        final int dim = 4096;
+        final int dim = ragDefaultProperties.getDimension();
         List<float[]> vectors = extractVectors(chunks, dim);
 
         List<JsonObject> rows = new ArrayList<>(chunks.size());
@@ -69,13 +67,10 @@ public class MilvusVectorStoreService implements VectorStoreService {
                 content = content.substring(0, 65535);
             }
 
-            JsonObject metadata = new JsonObject();
-            metadata.addProperty("kb_id", kbId);
-            metadata.addProperty("doc_id", docId);
-            metadata.addProperty("chunk_index", chunk.getIndex());
+            JsonObject metadata = buildMetadata(collectionName, docId, chunk);
 
             JsonObject row = new JsonObject();
-            row.addProperty("doc_id", chunk.getChunkId());
+            row.addProperty("id", chunk.getChunkId());
             row.addProperty("content", content);
             row.add("metadata", metadata);
             row.add("embedding", toJsonArray(vectors.get(i)));
@@ -83,25 +78,20 @@ public class MilvusVectorStoreService implements VectorStoreService {
             rows.add(row);
         }
 
-        String collection = kbDO.getCollectionName();
         InsertReq req = InsertReq.builder()
-                .collectionName(collection)
+                .collectionName(collectionName)
                 .data(rows)
                 .build();
 
         InsertResp resp = milvusClient.insert(req);
-        log.info("Milvus chunk 建立/写入向量索引成功, collection={}, rows={}", collection, resp.getInsertCnt());
+        log.info("Milvus chunk 建立/写入向量索引成功, collection={}, rows={}", collectionName, resp.getInsertCnt());
     }
 
     @Override
-    public void updateChunk(String kbId, String docId, VectorChunk chunk) {
+    public void updateChunk(String collectionName, String docId, VectorChunk chunk) {
         Assert.isFalse(chunk == null, () -> new ClientException("Chunk 对象不能为空"));
 
-        KnowledgeBaseDO kbDO = kbMapper.selectById(kbId);
-        Assert.isFalse(kbDO == null, () -> new ClientException("知识库不存在"));
-
-        // 维度校验
-        final int dim = 4096;
+        final int dim = ragDefaultProperties.getDimension();
         float[] vector = extractVector(chunk, dim);
 
         String chunkPk = chunk.getChunkId() != null ? chunk.getChunkId() : IdUtil.getSnowflakeNextIdStr();
@@ -111,38 +101,58 @@ public class MilvusVectorStoreService implements VectorStoreService {
             content = content.substring(0, 65535);
         }
 
-        JsonObject metadata = new JsonObject();
-        metadata.addProperty("kb_id", kbId);
-        metadata.addProperty("doc_id", docId);
-        metadata.addProperty("chunk_index", chunk.getIndex());
+        JsonObject metadata = buildMetadata(collectionName, docId, chunk);
 
         JsonObject row = new JsonObject();
-        row.addProperty("doc_id", chunkPk);
+        row.addProperty("id", chunkPk);
         row.addProperty("content", content);
         row.add("metadata", metadata);
         row.add("embedding", toJsonArray(vector));
 
-        List<JsonObject> rows = List.of(row);
-
-        String collection = kbDO.getCollectionName();
-
         UpsertReq upsertReq = UpsertReq.builder()
-                .collectionName(collection)
-                .data(rows)
+                .collectionName(collectionName)
+                .data(List.of(row))
                 .build();
 
         UpsertResp resp = milvusClient.upsert(upsertReq);
+        log.info("Milvus 更新 chunk 向量索引成功, collection={}, docId={}, chunkId={}, upsertCnt={}",
+                collectionName, docId, chunkPk, resp.getUpsertCnt());
+    }
 
-        log.info("Milvus 更新 chunk 向量索引成功, collection={}, kbId={}, docId={}, chunkId={}, upsertCnt={}",
-                collection, kbId, docId, chunkPk, resp.getUpsertCnt());
+    @Override
+    public void deleteDocumentVectors(String collectionName, String docId) {
+        // 已通过 collectionName 定位集合，只需按 doc_id 过滤即可
+        String filter = "metadata[\"doc_id\"] == \"" + docId + "\"";
+
+        DeleteReq deleteReq = DeleteReq.builder()
+                .collectionName(collectionName)
+                .filter(filter)
+                .build();
+
+        DeleteResp resp = milvusClient.delete(deleteReq);
+        log.info("Milvus 删除指定文档的所有 chunk 向量索引成功, collection={}, docId={}, deleteCnt={}",
+                collectionName, docId, resp.getDeleteCnt());
+    }
+
+    @Override
+    public void deleteChunkById(String collectionName, String chunkId) {
+        // chunkId 就是 Milvus 中的 doc_id（主键），直接通过主键删除
+        String filter = "id == \"" + chunkId + "\"";
+
+        DeleteReq deleteReq = DeleteReq.builder()
+                .collectionName(collectionName)
+                .filter(filter)
+                .build();
+
+        DeleteResp resp = milvusClient.delete(deleteReq);
+        log.info("Milvus 删除指定 chunk 向量索引成功, collection={}, chunkId={}, deleteCnt={}",
+                collectionName, chunkId, resp.getDeleteCnt());
     }
 
     private List<float[]> extractVectors(List<VectorChunk> chunks, int expectedDim) {
         List<float[]> vectors = new ArrayList<>(chunks.size());
-        for (int i = 0; i < chunks.size(); i++) {
-            VectorChunk chunk = chunks.get(i);
-            float[] vector = extractVector(chunk, expectedDim);
-            vectors.add(vector);
+        for (VectorChunk chunk : chunks) {
+            vectors.add(extractVector(chunk, expectedDim));
         }
         return vectors;
     }
@@ -158,53 +168,23 @@ public class MilvusVectorStoreService implements VectorStoreService {
         return vector;
     }
 
-    @Override
-    public void deleteDocumentVectors(String kbId, String docId) {
-        KnowledgeBaseDO kbDO = kbMapper.selectById(kbId);
-        Assert.notNull(kbDO, () -> new ClientException("知识库不存在"));
-
-        String collection = kbDO.getCollectionName();
-
-        // 按 JSON 过滤：删除该 kbId 下、该文档ID 的所有 chunk
-        String filter = "metadata[\"kb_id\"] == \"" + kbId + "\" && " +
-                "metadata[\"doc_id\"] == \"" + docId + "\"";
-
-        DeleteReq deleteReq = DeleteReq.builder()
-                .collectionName(collection)
-                .filter(filter)
-                .build();
-
-        DeleteResp resp = milvusClient.delete(deleteReq);
-        log.info("Milvus 删除指定文档的所有 chunk 向量索引成功, collection={}, kbId={}, docId={}, deleteCnt={}",
-                collection, kbId, docId, resp.getDeleteCnt());
-    }
-
-
-    @Override
-    public void deleteChunkById(String kbId, String chunkId) {
-        KnowledgeBaseDO kbDO = kbMapper.selectById(kbId);
-        Assert.isFalse(kbDO == null, () -> new ClientException("知识库不存在"));
-
-        String collection = kbDO.getCollectionName();
-
-        // chunkId 就是 Milvus 中的 doc_id（主键），直接通过主键删除
-        String filter = "doc_id == \"" + chunkId + "\"";
-
-        DeleteReq deleteReq = DeleteReq.builder()
-                .collectionName(collection)
-                .filter(filter)
-                .build();
-
-        DeleteResp resp = milvusClient.delete(deleteReq);
-        log.info("Milvus 删除指定 chunk 向量索引成功, collection={}, kbId={}, chunkId={}, deleteCnt={}",
-                collection, kbId, chunkId, resp.getDeleteCnt());
-    }
-
     private JsonArray toJsonArray(float[] v) {
         JsonArray arr = new JsonArray(v.length);
         for (float x : v) {
             arr.add(x);
         }
         return arr;
+    }
+
+    private JsonObject buildMetadata(String collectionName, String docId, VectorChunk chunk) {
+        JsonObject metadata = new JsonObject();
+        if (chunk.getMetadata() != null) {
+            chunk.getMetadata().forEach((k, v) -> metadata.add(k, GSON.toJsonTree(v)));
+        }
+
+        metadata.addProperty("collection_name", collectionName);
+        metadata.addProperty("doc_id", docId);
+        metadata.addProperty("chunk_index", chunk.getIndex());
+        return metadata;
     }
 }

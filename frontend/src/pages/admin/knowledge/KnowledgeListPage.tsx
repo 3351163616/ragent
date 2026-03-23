@@ -393,7 +393,7 @@ export function KnowledgeListPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作将永久删除该知识库及其所有文档和数据，无法恢复。确定要继续吗？
+              知识库删除后当前不提供恢复入口。确定要继续吗？
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -406,7 +406,7 @@ export function KnowledgeListPage() {
       </AlertDialog>
 
       <Dialog open={renameDialog.open} onOpenChange={(open) => setRenameDialog({ open, kb: open ? renameDialog.kb : null })}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[420px]" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => (document.activeElement as HTMLElement)?.blur()); }}>
           <DialogHeader>
             <DialogTitle>重命名知识库</DialogTitle>
             <DialogDescription>修改知识库名称</DialogDescription>

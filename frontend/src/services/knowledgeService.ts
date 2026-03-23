@@ -96,8 +96,8 @@ export interface KnowledgeBaseUpdatePayload {
 }
 
 export interface KnowledgeDocumentPageParams {
-  pageNo?: number;
-  pageSize?: number;
+  current?: number;
+  size?: number;
   status?: string;
   keyword?: string;
 }
@@ -126,6 +126,15 @@ export interface KnowledgeChunkPageParams {
 }
 
 // 知识库管理
+export interface ChunkStrategyOption {
+  value: string;
+  label: string;
+}
+
+export const getChunkStrategies = async (): Promise<ChunkStrategyOption[]> => {
+  return api.get<ChunkStrategyOption[], ChunkStrategyOption[]>("/knowledge-base/chunk-strategies");
+};
+
 export const getKnowledgeBases = async (current = 1, size = 200, name?: string): Promise<KnowledgeBase[]> => {
   const page = await api.get<PageResult<KnowledgeBase>, PageResult<KnowledgeBase>>("/knowledge-base", {
     params: { current, size, name: name || undefined }
@@ -170,8 +179,8 @@ export const getDocumentsPage = async (
 ): Promise<PageResult<KnowledgeDocument>> => {
   return api.get<PageResult<KnowledgeDocument>, PageResult<KnowledgeDocument>>(`/knowledge-base/${kbId}/docs`, {
     params: {
-      pageNo: params.pageNo ?? 1,
-      pageSize: params.pageSize ?? 10,
+      current: params.current ?? 1,
+      size: params.size ?? 10,
       status: params.status || undefined,
       keyword: params.keyword || undefined
     }
@@ -343,15 +352,15 @@ export const rebuildChunks = async (docId: string): Promise<void> => {
 // 文档分块日志管理
 export const getChunkLogsPage = async (
   docId: string,
-  pageNo = 1,
-  pageSize = 10
+  current = 1,
+  size = 10
 ): Promise<PageResult<KnowledgeDocumentChunkLog>> => {
   return api.get<PageResult<KnowledgeDocumentChunkLog>, PageResult<KnowledgeDocumentChunkLog>>(
     `/knowledge-base/docs/${docId}/chunk-logs`,
     {
       params: {
-        pageNo,
-        pageSize
+        current,
+        size
       }
     }
   );

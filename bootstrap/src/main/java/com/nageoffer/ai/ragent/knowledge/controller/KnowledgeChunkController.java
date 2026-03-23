@@ -126,7 +126,7 @@ public class KnowledgeChunkController {
     }
 
     /**
-     * 重建文档向量（以 MySQL enabled=1 的 chunk 为准）
+     * 重建文档向量（以数据库 enabled=1 的 chunk 为准）
      */
     @PostMapping("/knowledge-base/docs/{doc-id}/chunks/rebuild")
     public Result<Void> rebuild(@PathVariable("doc-id") String docId) {

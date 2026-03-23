@@ -15,33 +15,16 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.knowledge.service;
+package com.nageoffer.ai.ragent.knowledge.controller.vo;
 
-import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentDO;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 
-/**
- * 知识库文档定时任务服务
- */
-public interface KnowledgeDocumentScheduleService {
+@Data
+@AllArgsConstructor
+public class ChunkStrategyVO {
 
-    /**
-     * 根据文档信息创建或更新定时任务记录
-     *
-     * @param documentDO 文档实体
-     */
-    void upsertSchedule(KnowledgeDocumentDO documentDO);
+    private String value;
 
-    /**
-     * 当文档启用/禁用时同步定时任务（仅更新已存在的任务）
-     *
-     * @param documentDO 文档实体
-     */
-    void syncScheduleIfExists(KnowledgeDocumentDO documentDO);
-
-    /**
-     * 删除文档关联的定时任务及执行记录
-     *
-     * @param docId 文档ID
-     */
-    void deleteByDocId(String docId);
+    private String label;
 }

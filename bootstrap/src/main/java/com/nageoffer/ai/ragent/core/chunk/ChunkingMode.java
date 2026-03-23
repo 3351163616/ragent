@@ -34,27 +34,37 @@ public enum ChunkingMode {
     /**
      * 固定大小切分 - 按固定字符数或token数切分
      */
-    FIXED_SIZE("fixed_size"),
+    FIXED_SIZE("fixed_size", "固定大小", true),
 
     /**
      * 对Markdown友好的切分 - 保留Markdown结构
      */
-    STRUCTURE_AWARE("structure_aware"),
+    STRUCTURE_AWARE("structure_aware", "语义感知（Markdown友好）", true),
 
     /**
      * 按句子切分 - 以句子为单位进行切分
      */
-    SENTENCE("sentence"),
+    SENTENCE("sentence", "按句子", false),
 
     /**
      * 按段落切分 - 以段落为单位进行切分
      */
-    PARAGRAPH("paragraph");
+    PARAGRAPH("paragraph", "按段落", false);
 
     /**
      * 策略值（小写 snake_case）
      */
     private final String value;
+
+    /**
+     * 策略展示名称
+     */
+    private final String label;
+
+    /**
+     * 是否对前端可见
+     */
+    private final boolean visible;
 
     /**
      * 根据字符串值解析策略

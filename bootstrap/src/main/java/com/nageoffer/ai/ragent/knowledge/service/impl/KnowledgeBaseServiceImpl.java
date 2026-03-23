@@ -116,7 +116,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void update(KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(requestParam.getId());
         if (kb == null || kb.getDeleted() != null && kb.getDeleted() == 1) {
-            throw new IllegalArgumentException("知识库不存在：" + requestParam.getId());
+            throw new ClientException("知识库不存在：" + requestParam.getId());
         }
 
         if (StringUtils.hasText(requestParam.getEmbeddingModel())
@@ -129,7 +129,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                             .eq(KnowledgeDocumentDO::getDeleted, 0)
             );
             if (docCount > 0) {
-                throw new IllegalStateException("知识库已存在向量化文档，不允许修改嵌入模型");
+                throw new ClientException("知识库已存在向量化文档，不允许修改嵌入模型");
             }
 
             kb.setEmbeddingModel(requestParam.getEmbeddingModel());
@@ -174,18 +174,25 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(String kbId) {
-        // 限制删除前需要确保没有文档
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
+        if (kbDO == null || kbDO.getDeleted() != null && kbDO.getDeleted() == 1) {
+            throw new ClientException("知识库不存在");
+        }
+
         Long docCount = knowledgeDocumentMapper.selectCount(
                 Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
                         .eq(KnowledgeDocumentDO::getKbId, kbId)
                         .eq(KnowledgeDocumentDO::getDeleted, 0)
         );
-        if (docCount > 0) {
-            throw new ClientException("知识库下仍有关联文档，无法删除");
+        if (docCount != null && docCount > 0) {
+            throw new ClientException("当前知识库下还有文档，请删除文档");
         }
 
-        knowledgeBaseMapper.deleteById(kbId);
+        kbDO.setDeleted(1);
+        kbDO.setUpdatedBy(UserContext.getUsername());
+        knowledgeBaseMapper.deleteById(kbDO);
     }
 
     @Override

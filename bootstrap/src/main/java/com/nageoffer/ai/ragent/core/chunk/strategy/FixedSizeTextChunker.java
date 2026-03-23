@@ -61,16 +61,17 @@ public class FixedSizeTextChunker extends AbstractEmbeddingChunker {
         // 1) 更保守的归一化：只修 URL 明显断行，不吞正常换行
         String normalized = normalizeText(text);
 
-        int chunkSize = Math.max(1, config.getChunkSize());
-        int overlap = Math.max(0, config.getOverlapSize());
-
-        if (chunkSize == Integer.MAX_VALUE) {
+        Integer configuredChunkSize = config.getChunkSize();
+        if (configuredChunkSize != null && configuredChunkSize == -1) {
             return List.of(VectorChunk.builder()
                     .chunkId(IdUtil.getSnowflakeNextIdStr())
                     .index(0)
                     .content(normalized)
                     .build());
         }
+
+        int chunkSize = Math.max(1, configuredChunkSize == null ? 512 : configuredChunkSize);
+        int overlap = Math.max(0, config.getOverlapSize());
 
         if (chunkSize > 1) {
             overlap = Math.min(overlap, chunkSize - 1);

@@ -108,24 +108,20 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         Integer chunkIndex = requestParam.getIndex();
         if (chunkIndex == null) {
-            // 自动取当前最大值 + 1
-            int maxIndex = chunkMapper.selectOne(
+            KnowledgeChunkDO latest = chunkMapper.selectOne(
                     new LambdaQueryWrapper<KnowledgeChunkDO>()
                             .eq(KnowledgeChunkDO::getDocId, docId)
                             .orderByDesc(KnowledgeChunkDO::getChunkIndex)
                             .last("LIMIT 1")
-            ) != null ? chunkMapper.selectOne(
-                    new LambdaQueryWrapper<KnowledgeChunkDO>()
-                            .eq(KnowledgeChunkDO::getDocId, docId)
-                            .orderByDesc(KnowledgeChunkDO::getChunkIndex)
-                            .last("LIMIT 1")
-            ).getChunkIndex() : -1;
-            chunkIndex = maxIndex + 1;
+            );
+            chunkIndex = latest != null ? latest.getChunkIndex() + 1 : 0;
         }
 
         String contentHash = calculateHash(content);
         int charCount = content.length();
-        String embeddingModel = resolveEmbeddingModel(documentDO.getKbId());
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String embeddingModel = kbDO.getEmbeddingModel();
+        String collectionName = kbDO.getCollectionName();
         Integer tokenCount = resolveTokenCount(content);
 
         KnowledgeChunkDO chunkDO = KnowledgeChunkDO.builder()
@@ -144,8 +140,12 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkMapper.insert(chunkDO);
         log.info("新增 Chunk 成功, kbId={}, docId={}, chunkId={}, chunkIndex={}", documentDO.getKbId(), docId, chunkDO.getId(), chunkIndex);
 
-        // 同步写入 Milvus
-        syncChunkToMilvus(String.valueOf(documentDO.getKbId()), docId, chunkDO, embeddingModel);
+        documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                .eq(KnowledgeDocumentDO::getId, docId)
+                .setSql("chunk_count = chunk_count + 1"));
+
+        // 同步写入向量库
+        syncChunkToVector(collectionName, docId, chunkDO, embeddingModel);
 
         return BeanUtil.toBean(chunkDO, KnowledgeChunkVO.class);
     }
@@ -180,7 +180,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         String kbId = documentDO.getKbId();
         String username = UserContext.getUsername();
-        String embeddingModel = resolveEmbeddingModel(kbId);
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
+        String embeddingModel = kbDO.getEmbeddingModel();
+        String collectionName = kbDO.getCollectionName();
         List<KnowledgeChunkDO> chunkDOList = new ArrayList<>(requestParams.size());
 
         for (KnowledgeChunkCreateRequest request : requestParams) {
@@ -216,7 +218,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkMapper.insert(chunkDOList);
 
         if (writeVector) {
-            String kbIdStr = String.valueOf(documentDO.getKbId());
             List<VectorChunk> vectorChunks = chunkDOList.stream()
                     .map(each -> VectorChunk.builder()
                             .chunkId(String.valueOf(each.getId()))
@@ -226,7 +227,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                     .toList();
             if (CollUtil.isNotEmpty(vectorChunks)) {
                 attachEmbeddings(vectorChunks, embeddingModel);
-                vectorStoreService.indexDocumentChunks(kbIdStr, docId, vectorChunks);
+                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
             }
         }
     }
@@ -251,18 +252,19 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkDO.setContent(newContent);
         chunkDO.setContentHash(calculateHash(newContent));
         chunkDO.setCharCount(newContent.length());
-        String embeddingModel = resolveEmbeddingModel(documentDO.getKbId());
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String embeddingModel = kbDO.getEmbeddingModel();
+        String collectionName = kbDO.getCollectionName();
         chunkDO.setTokenCount(resolveTokenCount(newContent));
         chunkDO.setUpdatedBy(UserContext.getUsername());
 
         chunkMapper.updateById(chunkDO);
 
-        String kbId = String.valueOf(documentDO.getKbId());
-        log.info("更新 Chunk 成功, kbId={}, docId={}, chunkId={}", kbId, docId, chunkId);
+        log.info("更新 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
 
         // 同步向量数据库
         vectorStoreService.updateChunk(
-                String.valueOf(chunkDO.getKbId()),
+                collectionName,
                 docId,
                 VectorChunk.builder()
                         .chunkId(chunkId)
@@ -285,10 +287,14 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         chunkMapper.deleteById(chunkId);
 
-        String kbId = String.valueOf(documentDO.getKbId());
-        log.info("删除 Chunk 成功, kbId={}, docId={}, chunkId={}", kbId, docId, chunkId);
+        documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                .eq(KnowledgeDocumentDO::getId, docId)
+                .setSql("chunk_count = CASE WHEN chunk_count > 0 THEN chunk_count - 1 ELSE 0 END"));
 
-        deleteChunkFromMilvus(kbId, chunkId);
+        String collectionName = resolveCollectionName(documentDO.getKbId());
+        log.info("删除 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
+
+        deleteChunkFromVector(collectionName, chunkId);
     }
 
     @Override
@@ -312,13 +318,15 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkDO.setUpdatedBy(UserContext.getUsername());
         chunkMapper.updateById(chunkDO);
 
-        String kbId = String.valueOf(documentDO.getKbId());
-        log.info("{}Chunk 成功, kbId={}, docId={}, chunkId={}", enabled ? "启用" : "禁用", kbId, docId, chunkId);
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String collectionName = kbDO.getCollectionName();
+        log.info("{}Chunk 成功, kbId={}, docId={}, chunkId={}", enabled ? "启用" : "禁用", documentDO.getKbId(), docId, chunkId);
 
         if (enabled) {
-            syncChunkToMilvus(kbId, docId, chunkDO, resolveEmbeddingModel(documentDO.getKbId()));
+            String embeddingModel = kbDO.getEmbeddingModel();
+            syncChunkToVector(collectionName, docId, chunkDO, embeddingModel);
         } else {
-            deleteChunkFromMilvus(kbId, chunkId);
+            deleteChunkFromVector(collectionName, chunkId);
         }
     }
 
@@ -387,13 +395,15 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
 
-        String kbId = String.valueOf(documentDO.getKbId());
-        log.info("开始重建文档向量, kbId={}, docId={}", kbId, docId);
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String collectionName = kbDO.getCollectionName();
+        String embeddingModel = kbDO.getEmbeddingModel();
+        log.info("开始重建文档向量, kbId={}, docId={}", documentDO.getKbId(), docId);
 
-        // 1. Milvus 先删除该 doc 下所有向量
-        vectorStoreService.deleteDocumentVectors(kbId, docId);
+        // 1. 先删除该 doc 下所有向量
+        vectorStoreService.deleteDocumentVectors(collectionName, docId);
 
-        // 2. 读取 MySQL enabled=1 的 chunks
+        // 2. 读取 enabled=1 的 chunks
         List<KnowledgeChunkDO> enabledChunks = chunkMapper.selectList(
                 new LambdaQueryWrapper<KnowledgeChunkDO>()
                         .eq(KnowledgeChunkDO::getDocId, docId)
@@ -402,26 +412,24 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         );
 
         if (enabledChunks.isEmpty()) {
-            log.warn("文档下没有启用的 Chunk，跳过向量重建, kbId={}, docId={}", kbId, docId);
+            log.warn("文档下没有启用的 Chunk，跳过向量重建, kbId={}, docId={}", documentDO.getKbId(), docId);
             return;
         }
 
         // 3. 重新向量化并重建索引
         List<VectorChunk> chunks = enabledChunks.stream()
-                .map(
-                        each -> VectorChunk.builder()
-                                .content(each.getContent())
-                                .index(each.getChunkIndex())
-                                .chunkId(IdUtil.getSnowflakeNextIdStr())
-                                .build()
-                )
+                .map(each -> VectorChunk.builder()
+                        .content(each.getContent())
+                        .index(each.getChunkIndex())
+                        .chunkId(each.getId())
+                        .build())
                 .collect(Collectors.toList());
 
-        attachEmbeddings(chunks, resolveEmbeddingModel(documentDO.getKbId()));
+        attachEmbeddings(chunks, embeddingModel);
 
-        vectorStoreService.indexDocumentChunks(kbId, docId, chunks);
+        vectorStoreService.indexDocumentChunks(collectionName, docId, chunks);
 
-        log.info("重建文档向量成功, kbId={}, docId={}, chunkCount={}", kbId, docId, enabledChunks.size());
+        log.info("重建文档向量成功, kbId={}, docId={}, chunkCount={}", documentDO.getKbId(), docId, enabledChunks.size());
     }
 
     // ==================== 私有方法 ====================
@@ -435,7 +443,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         validateDocumentEnabledForChunkEnable(documentDO, enabled);
 
         List<KnowledgeChunkDO> chunks;
-        if (requestParam == null || requestParam.getChunkIds() == null || requestParam.getChunkIds().isEmpty()) {
+        if (requestParam == null || CollUtil.isEmpty(requestParam.getChunkIds())) {
             // 操作文档下所有 chunk
             chunks = chunkMapper.selectList(
                     new LambdaQueryWrapper<KnowledgeChunkDO>()
@@ -464,14 +472,14 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             }
         }
 
-        String kbId = String.valueOf(documentDO.getKbId());
-        log.info("批量{}Chunk 成功, kbId={}, docId={}, count={}", enabled ? "启用" : "禁用", kbId, docId, needUpdateIds.size());
+        String collectionName = resolveCollectionName(documentDO.getKbId());
+        log.info("批量{}Chunk 成功, kbId={}, docId={}, count={}", enabled ? "启用" : "禁用", documentDO.getKbId(), docId, needUpdateIds.size());
 
         if (enabled) {
             doRebuildByDocId(docId);
         } else {
             for (String chunkId : needUpdateIds) {
-                deleteChunkFromMilvus(kbId, String.valueOf(chunkId));
+                deleteChunkFromVector(collectionName, String.valueOf(chunkId));
             }
         }
     }
@@ -489,9 +497,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     /**
-     * 将单个 chunk 同步到 Milvus
+     * 将单个 chunk 同步到向量库
      */
-    private void syncChunkToMilvus(String kbId, String docId, KnowledgeChunkDO chunkDO, String embeddingModel) {
+    private void syncChunkToVector(String collectionName, String docId, KnowledgeChunkDO chunkDO, String embeddingModel) {
         List<Float> embedding = embedContent(chunkDO.getContent(), embeddingModel);
         float[] vector = toArray(embedding);
 
@@ -501,17 +509,21 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .chunkId(String.valueOf(chunkDO.getId()))
                 .embedding(vector)
                 .build();
-        vectorStoreService.indexDocumentChunks(kbId, docId, List.of(chunk));
+        vectorStoreService.indexDocumentChunks(collectionName, docId, List.of(chunk));
 
-        log.debug("同步 Chunk 到 Milvus 成功, kbId={}, docId={}, chunkId={}", kbId, docId, chunkDO.getId());
+        log.debug("同步 Chunk 到向量库成功, collectionName={}, docId={}, chunkId={}", collectionName, docId, chunkDO.getId());
     }
 
     /**
-     * 从 Milvus 删除单个 chunk
+     * 从向量库删除单个 chunk
      */
-    private void deleteChunkFromMilvus(String kbId, String chunkId) {
-        vectorStoreService.deleteChunkById(kbId, chunkId);
-        log.debug("从 Milvus 删除 Chunk, kbId={}, chunkId={}", kbId, chunkId);
+    private void deleteChunkFromVector(String collectionName, String chunkId) {
+        vectorStoreService.deleteChunkById(collectionName, chunkId);
+        log.debug("从向量库删除 Chunk, collectionName={}, chunkId={}", collectionName, chunkId);
+    }
+
+    private String resolveCollectionName(String kbId) {
+        return knowledgeBaseMapper.selectById(kbId).getCollectionName();
     }
 
     /**
@@ -568,14 +580,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return StrUtil.isBlank(embeddingModel)
                 ? embeddingService.embedBatch(texts)
                 : embeddingService.embedBatch(texts, embeddingModel);
-    }
-
-    private String resolveEmbeddingModel(String kbId) {
-        if (kbId == null) {
-            return null;
-        }
-        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
-        return kbDO != null ? kbDO.getEmbeddingModel() : null;
     }
 
     private Integer resolveTokenCount(String content) {
