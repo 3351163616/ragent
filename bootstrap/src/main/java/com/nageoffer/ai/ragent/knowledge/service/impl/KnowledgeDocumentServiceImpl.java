@@ -20,72 +20,68 @@ package com.nageoffer.ai.ragent.knowledge.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
-import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nageoffer.ai.ragent.core.chunk.ChunkingMode;
+import com.nageoffer.ai.ragent.core.chunk.ChunkingOptions;
+import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategy;
+import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategyFactory;
+import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
+import com.nageoffer.ai.ragent.core.parser.DocumentParserSelector;
+import com.nageoffer.ai.ragent.core.parser.ParserType;
+import com.nageoffer.ai.ragent.framework.context.UserContext;
+import com.nageoffer.ai.ragent.framework.exception.ClientException;
+import com.nageoffer.ai.ragent.framework.exception.ServiceException;
 import com.nageoffer.ai.ragent.infra.embedding.EmbeddingService;
+import com.nageoffer.ai.ragent.ingestion.dao.entity.IngestionPipelineDO;
+import com.nageoffer.ai.ragent.ingestion.dao.mapper.IngestionPipelineMapper;
+import com.nageoffer.ai.ragent.ingestion.domain.context.IngestionContext;
+import com.nageoffer.ai.ragent.ingestion.domain.pipeline.PipelineDefinition;
+import com.nageoffer.ai.ragent.ingestion.engine.IngestionEngine;
+import com.nageoffer.ai.ragent.ingestion.service.IngestionPipelineService;
+import com.nageoffer.ai.ragent.ingestion.util.HttpClientHelper;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkCreateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentPageRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUpdateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUploadRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeChunkVO;
-import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentVO;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentChunkLogVO;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentSearchVO;
-import com.nageoffer.ai.ragent.core.chunk.ChunkingMode;
-import com.nageoffer.ai.ragent.core.chunk.ChunkingOptions;
-import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategyFactory;
-import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
-import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategy;
+import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentVO;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
-import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentChunkLogDO;
+import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
-import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
-import com.nageoffer.ai.ragent.rag.dto.StoredFileDTO;
+import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.nageoffer.ai.ragent.knowledge.enums.DocumentStatus;
 import com.nageoffer.ai.ragent.knowledge.enums.ProcessMode;
 import com.nageoffer.ai.ragent.knowledge.enums.SourceType;
-import com.nageoffer.ai.ragent.framework.context.UserContext;
-import com.nageoffer.ai.ragent.framework.exception.ClientException;
-import com.nageoffer.ai.ragent.framework.exception.ServiceException;
-import com.nageoffer.ai.ragent.core.parser.DocumentParserSelector;
-import com.nageoffer.ai.ragent.core.parser.ParserType;
-import com.nageoffer.ai.ragent.rag.core.vector.VectorStoreService;
-import com.nageoffer.ai.ragent.rag.core.vector.VectorSpaceId;
-import com.nageoffer.ai.ragent.rag.service.FileStorageService;
-import com.nageoffer.ai.ragent.knowledge.service.KnowledgeChunkService;
-import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentService;
-import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentScheduleService;
-import com.nageoffer.ai.ragent.knowledge.schedule.CronScheduleHelper;
-import com.nageoffer.ai.ragent.ingestion.util.HttpClientHelper;
-import com.nageoffer.ai.ragent.ingestion.service.IngestionPipelineService;
-import com.nageoffer.ai.ragent.ingestion.engine.IngestionEngine;
-import com.nageoffer.ai.ragent.ingestion.dao.entity.IngestionPipelineDO;
-import com.nageoffer.ai.ragent.ingestion.dao.mapper.IngestionPipelineMapper;
-import com.nageoffer.ai.ragent.ingestion.domain.context.IngestionContext;
-import com.nageoffer.ai.ragent.ingestion.domain.pipeline.PipelineDefinition;
-import com.nageoffer.ai.ragent.knowledge.config.RagSemaphoreProperties;
 import com.nageoffer.ai.ragent.knowledge.mq.KnowledgeDocumentChunkProducer;
 import com.nageoffer.ai.ragent.knowledge.mq.event.KnowledgeDocumentChunkEvent;
+import com.nageoffer.ai.ragent.knowledge.schedule.CronScheduleHelper;
+import com.nageoffer.ai.ragent.knowledge.service.KnowledgeChunkService;
+import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentScheduleService;
+import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentService;
+import com.nageoffer.ai.ragent.rag.core.vector.VectorSpaceId;
+import com.nageoffer.ai.ragent.rag.core.vector.VectorStoreService;
+import com.nageoffer.ai.ragent.rag.dto.StoredFileDTO;
+import com.nageoffer.ai.ragent.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RPermitExpirableSemaphore;
-import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.util.unit.DataSize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.util.StringUtils;
+import org.springframework.util.unit.DataSize;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -93,12 +89,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -115,8 +110,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final EmbeddingService embeddingService;
     private final HttpClientHelper httpClientHelper;
     private final ObjectMapper objectMapper;
-    private final RedissonClient redissonClient;
-    private final RagSemaphoreProperties semaphoreProperties;
     private final KnowledgeDocumentScheduleService scheduleService;
     private final IngestionPipelineService ingestionPipelineService;
     private final IngestionPipelineMapper ingestionPipelineMapper;
@@ -173,63 +166,54 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
         }
 
-        RagSemaphoreProperties.PermitExpirableConfig semaphoreConfig = semaphoreProperties.getDocumentUpload();
-        RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore(
-                semaphoreConfig.getName()
-        );
-        String permitId = acquireUploadPermit(semaphore, semaphoreConfig);
-        try {
-            StoredFileDTO stored = resolveStoredFile(kbDO.getCollectionName(), sourceType, sourceLocation, file);
+        StoredFileDTO stored = resolveStoredFile(kbDO.getCollectionName(), sourceType, sourceLocation, file);
 
-            ProcessMode processMode = ProcessMode.normalize(request == null ? null : request.getProcessMode());
-            ChunkingMode chunkingMode = null;
-            String chunkConfig = null;
-            String pipelineId = null;
+        ProcessMode processMode = ProcessMode.normalize(request == null ? null : request.getProcessMode());
+        ChunkingMode chunkingMode = null;
+        String chunkConfig = null;
+        String pipelineId = null;
 
-            if (ProcessMode.CHUNK == processMode) {
-                // 分块模式：解析分块策略和配置
-                chunkingMode = resolveChunkingMode(request == null ? null : request.getChunkStrategy());
-                chunkConfig = buildChunkConfigJson(chunkingMode, request);
-            } else if (ProcessMode.PIPELINE == processMode) {
-                // Pipeline模式：验证Pipeline ID
-                if (request == null || !StringUtils.hasText(request.getPipelineId())) {
-                    throw new ClientException("使用Pipeline模式时，必须指定Pipeline ID");
-                }
-                pipelineId = request.getPipelineId();
-                // 验证Pipeline是否存在
-                try {
-                    ingestionPipelineService.get(request.getPipelineId());
-                } catch (Exception e) {
-                    throw new ClientException("指定的Pipeline不存在: " + request.getPipelineId());
-                }
+        if (ProcessMode.CHUNK == processMode) {
+            // 分块模式：解析分块策略和配置
+            chunkingMode = resolveChunkingMode(request == null ? null : request.getChunkStrategy());
+            chunkConfig = buildChunkConfigJson(chunkingMode, request);
+        } else if (ProcessMode.PIPELINE == processMode) {
+            // Pipeline模式：验证Pipeline ID
+            if (request == null || !StringUtils.hasText(request.getPipelineId())) {
+                throw new ClientException("使用Pipeline模式时，必须指定Pipeline ID");
             }
-
-            KnowledgeDocumentDO documentDO = KnowledgeDocumentDO.builder()
-                    .kbId(kbId)
-                    .docName(stored.getOriginalFilename())
-                    .enabled(1)
-                    .chunkCount(0)
-                    .fileUrl(stored.getUrl())
-                    .fileType(stored.getDetectedType())
-                    .fileSize(stored.getSize())
-                    .status(DocumentStatus.PENDING.getCode())
-                    .sourceType(sourceType.getValue())
-                    .sourceLocation(SourceType.URL == sourceType ? sourceLocation : null)
-                    .scheduleEnabled(scheduleEnabled ? 1 : 0)
-                    .scheduleCron(scheduleEnabled ? scheduleCron : null)
-                    .processMode(processMode.getValue())
-                    .chunkStrategy(chunkingMode != null ? chunkingMode.getValue() : null)
-                    .chunkConfig(chunkConfig)
-                    .pipelineId(pipelineId)
-                    .createdBy(UserContext.getUsername())
-                    .updatedBy(UserContext.getUsername())
-                    .build();
-            docMapper.insert(documentDO);
-
-            return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
-        } finally {
-            releaseUploadPermit(semaphore, permitId);
+            pipelineId = request.getPipelineId();
+            // 验证Pipeline是否存在
+            try {
+                ingestionPipelineService.get(request.getPipelineId());
+            } catch (Exception e) {
+                throw new ClientException("指定的Pipeline不存在: " + request.getPipelineId());
+            }
         }
+
+        KnowledgeDocumentDO documentDO = KnowledgeDocumentDO.builder()
+                .kbId(kbId)
+                .docName(stored.getOriginalFilename())
+                .enabled(1)
+                .chunkCount(0)
+                .fileUrl(stored.getUrl())
+                .fileType(stored.getDetectedType())
+                .fileSize(stored.getSize())
+                .status(DocumentStatus.PENDING.getCode())
+                .sourceType(sourceType.getValue())
+                .sourceLocation(SourceType.URL == sourceType ? sourceLocation : null)
+                .scheduleEnabled(scheduleEnabled ? 1 : 0)
+                .scheduleCron(scheduleEnabled ? scheduleCron : null)
+                .processMode(processMode.getValue())
+                .chunkStrategy(chunkingMode != null ? chunkingMode.getValue() : null)
+                .chunkConfig(chunkConfig)
+                .pipelineId(pipelineId)
+                .createdBy(UserContext.getUsername())
+                .updatedBy(UserContext.getUsername())
+                .build();
+        docMapper.insert(documentDO);
+
+        return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
 
     @Override
@@ -664,33 +648,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return embeddingService.embed(content);
         }
         return embeddingService.embed(content, embeddingModel);
-    }
-
-    private String acquireUploadPermit(RPermitExpirableSemaphore semaphore,
-                                       RagSemaphoreProperties.PermitExpirableConfig semaphoreConfig) {
-        try {
-            String permitId = semaphore.tryAcquire(
-                    semaphoreConfig.getMaxWaitSeconds(),
-                    semaphoreConfig.getLeaseSeconds(),
-                    TimeUnit.SECONDS
-            );
-            if (StrUtil.isBlank(permitId)) {
-                throw new ClientException("当前上传文件人数过多，请稍后再试");
-            }
-            return permitId;
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new ServiceException("获取上传并发许可失败");
-        }
-    }
-
-    private void releaseUploadPermit(RPermitExpirableSemaphore semaphore, String permitId) {
-        if (StrUtil.isNotBlank(permitId)) {
-            boolean released = semaphore.tryRelease(permitId);
-            if (!released) {
-                log.warn("upload permit already expired or released, permitId={}", permitId);
-            }
-        }
     }
 
     private SourceType normalizeSourceType(String sourceType, MultipartFile file) {
