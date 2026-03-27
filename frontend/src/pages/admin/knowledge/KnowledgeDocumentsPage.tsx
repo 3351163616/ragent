@@ -55,12 +55,6 @@ const PROCESS_MODE_OPTIONS = [
 
 const INT_MAX = 2147483647;
 const NO_CHUNK_VALUE = -1;
-const DEFAULT_CHUNK_SIZE = 512;
-const DEFAULT_OVERLAP_SIZE = 128;
-const DEFAULT_TARGET_CHARS = 1400;
-const DEFAULT_MAX_CHARS = 1800;
-const DEFAULT_MIN_CHARS = 600;
-const DEFAULT_OVERLAP_CHARS = 0;
 
 const parseChunkConfig = (raw?: string | null): Record<string, unknown> => {
   if (!raw) return {};
@@ -319,18 +313,12 @@ export function KnowledgeDocumentsPage() {
   const detailNameHint = detailIsUrlSource ? "仅支持修改文档名称" : "仅支持修改文件名";
   const detailConfig = detailTarget ? parseChunkConfig(detailTarget.chunkConfig) : {};
   const detailChunkStrategy = (detailTarget?.chunkStrategy || "structure_aware").toLowerCase();
-  const detailChunkSize =
-    detailTarget?.chunkSize ?? getConfigNumber(detailConfig, "chunkSize", DEFAULT_CHUNK_SIZE);
-  const detailOverlapSize =
-    detailTarget?.overlapSize ?? getConfigNumber(detailConfig, "overlapSize", DEFAULT_OVERLAP_SIZE);
-  const detailTargetChars =
-    detailTarget?.targetChars ?? getConfigNumber(detailConfig, "targetChars", DEFAULT_TARGET_CHARS);
-  const detailMaxChars =
-    detailTarget?.maxChars ?? getConfigNumber(detailConfig, "maxChars", DEFAULT_MAX_CHARS);
-  const detailMinChars =
-    detailTarget?.minChars ?? getConfigNumber(detailConfig, "minChars", DEFAULT_MIN_CHARS);
-  const detailOverlapChars =
-    detailTarget?.overlapChars ?? getConfigNumber(detailConfig, "overlapChars", DEFAULT_OVERLAP_CHARS);
+  const detailChunkSize = getConfigNumber(detailConfig, "chunkSize", 512);
+  const detailOverlapSize = getConfigNumber(detailConfig, "overlapSize", 128);
+  const detailTargetChars = getConfigNumber(detailConfig, "targetChars", 1400);
+  const detailMaxChars = getConfigNumber(detailConfig, "maxChars", 1800);
+  const detailMinChars = getConfigNumber(detailConfig, "minChars", 600);
+  const detailOverlapChars = getConfigNumber(detailConfig, "overlapChars", 0);
   const detailNameChanged = detailTarget ? detailName.trim() !== (detailTarget.docName || "") : false;
   const detailChunkSizeDisplay = detailChunkSize === INT_MAX ? "不分块" : detailChunkSize;
 
@@ -873,7 +861,7 @@ const uploadSchema = z
     scheduleEnabled: z.boolean().default(false),
     scheduleCron: z.string().optional(),
     processMode: z.enum(["chunk", "pipeline"]).default("chunk"),
-    chunkStrategy: z.enum(["fixed_size", "structure_aware"]).optional(),
+    chunkStrategy: z.string().optional(),
     pipelineId: z.string().optional(),
     chunkSize: z.string().optional(),
     overlapSize: z.string().optional(),
@@ -1036,6 +1024,29 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
     }
   }, [isUrlSource]);
 
+  // 切换策略时，用 API 返回的默认值填充表单
+  useEffect(() => {
+    const strategy = chunkStrategies.find((s) => s.value === chunkStrategy);
+    if (!strategy) return;
+    const defaults = strategy.defaultConfig;
+    const formAccessors: Record<string, (v: string) => void> = {
+      chunkSize: (v) => form.setValue("chunkSize", v),
+      overlapSize: (v) => form.setValue("overlapSize", v),
+      targetChars: (v) => form.setValue("targetChars", v),
+      maxChars: (v) => form.setValue("maxChars", v),
+      minChars: (v) => form.setValue("minChars", v),
+      overlapChars: (v) => form.setValue("overlapChars", v)
+    };
+    for (const key of Object.keys(strategy.defaultConfig)) {
+      if (defaults[key] !== undefined && formAccessors[key]) {
+        formAccessors[key](String(defaults[key]));
+      }
+    }
+    if (defaults["chunkSize"] !== undefined) {
+      setOriginalChunkSize(String(defaults["chunkSize"]));
+    }
+  }, [chunkStrategy, chunkStrategies, form]);
+
   // 监听块大小变化，如果用户手动修改了值，取消"不分块"状态
   useEffect(() => {
     if (noChunk && chunkSize !== String(NO_CHUNK_VALUE)) {
@@ -1073,12 +1084,30 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
       toast.error(`上传文件大小超过限制，最大允许 ${sizeMB}MB`);
       return;
     }
-    const chunkSize = parseNumber(values.chunkSize);
-    const overlapSize = parseNumber(values.overlapSize);
-    const targetChars = parseNumber(values.targetChars);
-    const maxChars = parseNumber(values.maxChars);
-    const minChars = parseNumber(values.minChars);
-    const overlapChars = parseNumber(values.overlapChars);
+
+    // 根据当前策略的 defaultConfig keys 从表单值组装 chunkConfig JSON
+    let chunkConfig: string | undefined;
+    if (values.processMode === "chunk") {
+      const strategy = chunkStrategies.find((s) => s.value === values.chunkStrategy);
+      if (strategy) {
+        const formAccessors: Record<string, string | undefined> = {
+          chunkSize: values.chunkSize,
+          overlapSize: values.overlapSize,
+          targetChars: values.targetChars,
+          maxChars: values.maxChars,
+          minChars: values.minChars,
+          overlapChars: values.overlapChars
+        };
+        const config: Record<string, number> = {};
+        for (const key of Object.keys(strategy.defaultConfig)) {
+          const val = parseNumber(formAccessors[key]);
+          if (val !== null) {
+            config[key] = val;
+          }
+        }
+        chunkConfig = JSON.stringify(config);
+      }
+    }
 
     setSaving(true);
     try {
@@ -1093,12 +1122,7 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
             : null,
         processMode: values.processMode,
         chunkStrategy: values.processMode === "chunk" ? values.chunkStrategy : undefined,
-        chunkSize: values.processMode === "chunk" && values.chunkStrategy === "fixed_size" ? chunkSize : null,
-        overlapSize: values.processMode === "chunk" && values.chunkStrategy === "fixed_size" ? overlapSize : null,
-        targetChars: values.processMode === "chunk" && values.chunkStrategy === "structure_aware" ? targetChars : null,
-        maxChars: values.processMode === "chunk" && values.chunkStrategy === "structure_aware" ? maxChars : null,
-        minChars: values.processMode === "chunk" && values.chunkStrategy === "structure_aware" ? minChars : null,
-        overlapChars: values.processMode === "chunk" && values.chunkStrategy === "structure_aware" ? overlapChars : null,
+        chunkConfig: chunkConfig ?? null,
         pipelineId: values.processMode === "pipeline" ? values.pipelineId : null
       };
       await onSubmit(payload);

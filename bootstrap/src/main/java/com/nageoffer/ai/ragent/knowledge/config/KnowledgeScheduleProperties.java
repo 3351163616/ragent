@@ -15,26 +15,39 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.core.chunk;
+package com.nageoffer.ai.ragent.knowledge.config;
 
-import java.util.Map;
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
 
 /**
- * 分块配置 sealed interface
- * 通过具体 record 实现类型安全的配置传递，消除魔法字符串
- *
- * @see FixedSizeOptions 固定大小切分配置
- * @see TextBoundaryOptions 文本边界切分配置（句子/段落/结构感知）
+ * 知识库定时任务配置
  */
-public sealed interface ChunkingOptions permits FixedSizeOptions, TextBoundaryOptions {
+@Data
+@Validated
+@Configuration
+@ConfigurationProperties(prefix = "rag.knowledge.schedule")
+public class KnowledgeScheduleProperties {
 
     /**
-     * 嵌入模型 ID，null 时使用系统默认模型
+     * 定时扫描间隔（毫秒）
      */
-    String embeddingModel();
+    private Long scanDelayMs = 10000L;
 
     /**
-     * 将配置导出为 Map，用于 API 返回和配置校验
+     * 分布式锁持有时长（秒）
      */
-    Map<String, Integer> toConfigMap();
+    private Long lockSeconds = 900L;
+
+    /**
+     * 每次扫描批量大小
+     */
+    private Integer batchSize = 20;
+
+    /**
+     * 定时拉取最小间隔（秒）
+     */
+    private Long minIntervalSeconds = 60L;
 }

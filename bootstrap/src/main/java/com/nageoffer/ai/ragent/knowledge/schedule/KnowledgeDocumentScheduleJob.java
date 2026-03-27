@@ -22,6 +22,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.framework.context.LoginUser;
 import com.nageoffer.ai.ragent.framework.context.UserContext;
+import com.nageoffer.ai.ragent.knowledge.config.KnowledgeScheduleProperties;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentScheduleDO;
@@ -34,26 +35,24 @@ import com.nageoffer.ai.ragent.knowledge.enums.DocumentStatus;
 import com.nageoffer.ai.ragent.knowledge.enums.ScheduleRunStatus;
 import com.nageoffer.ai.ragent.knowledge.enums.SourceType;
 import com.nageoffer.ai.ragent.knowledge.service.KnowledgeChunkService;
+import com.nageoffer.ai.ragent.knowledge.handler.RemoteFileFetcher;
 import com.nageoffer.ai.ragent.knowledge.service.impl.KnowledgeDocumentServiceImpl;
 import com.nageoffer.ai.ragent.rag.dto.StoredFileDTO;
 import com.nageoffer.ai.ragent.rag.service.FileStorageService;
-import com.nageoffer.ai.ragent.ingestion.util.HttpClientHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
-import org.springframework.util.unit.DataSize;
 
+import java.io.InputStream;
 import java.net.InetAddress;
-import java.security.MessageDigest;
+import java.nio.file.Files;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -88,17 +87,11 @@ public class KnowledgeDocumentScheduleJob {
     private final KnowledgeChunkService knowledgeChunkService;
     private final KnowledgeDocumentServiceImpl documentService;
     private final FileStorageService fileStorageService;
-    private final HttpClientHelper httpClientHelper;
+    private final RemoteFileFetcher remoteFileFetcher;
     private final PlatformTransactionManager transactionManager;
     @Qualifier("knowledgeChunkExecutor")
     private final Executor knowledgeChunkExecutor;
-
-    @Value("${rag.knowledge.schedule.lock-seconds:900}")
-    private long lockSeconds;
-    @Value("${rag.knowledge.schedule.batch-size:20}")
-    private int batchSize;
-    @Value("${spring.servlet.multipart.max-file-size:50MB}")
-    private DataSize maxFileSize;
+    private final KnowledgeScheduleProperties scheduleProperties;
 
     private final String instanceId = resolveInstanceId();
 
@@ -115,14 +108,14 @@ public class KnowledgeDocumentScheduleJob {
                                 .or()
                                 .lt(KnowledgeDocumentScheduleDO::getLockUntil, now))
                         .orderByAsc(KnowledgeDocumentScheduleDO::getNextRunTime)
-                        .last("LIMIT " + Math.max(batchSize, 1))
+                        .last("LIMIT " + Math.max(scheduleProperties.getBatchSize(), 1))
         );
 
         if (schedules == null || schedules.isEmpty()) {
             return;
         }
 
-        Date lockUntil = new Date(System.currentTimeMillis() + Math.max(lockSeconds, 60) * 1000);
+        Date lockUntil = new Date(System.currentTimeMillis() + Math.max(scheduleProperties.getLockSeconds(), 60) * 1000);
         for (KnowledgeDocumentScheduleDO schedule : schedules) {
             if (schedule == null || schedule.getId() == null) {
                 continue;
@@ -196,8 +189,13 @@ public class KnowledgeDocumentScheduleJob {
                 .build();
         execMapper.insert(exec);
 
-        try {
-            RemoteFetchResult fetchResult = fetchRemoteIfChanged(document, schedule);
+        try (RemoteFileFetcher.RemoteFetchResult fetchResult = remoteFileFetcher.fetchIfChanged(
+                    document.getSourceLocation(),
+                    schedule.getLastEtag(),
+                    schedule.getLastModified(),
+                    schedule.getLastContentHash(),
+                    document.getDocName()
+            )) {
             if (!fetchResult.changed()) {
                 markScheduleSkipped(schedule, exec.getId(), startTime, nextRunTime, fetchResult);
                 return;
@@ -209,12 +207,16 @@ public class KnowledgeDocumentScheduleJob {
                 throw new ClientException("知识库不存在");
             }
 
-            StoredFileDTO stored = fileStorageService.upload(
-                    kbDO.getCollectionName(),
-                    fetchResult.body(),
-                    fetchResult.fileName(),
-                    fetchResult.contentType()
-            );
+            StoredFileDTO stored;
+            try (InputStream tempIn = Files.newInputStream(fetchResult.tempFile())) {
+                stored = fileStorageService.upload(
+                        kbDO.getCollectionName(),
+                        tempIn,
+                        fetchResult.size(),
+                        fetchResult.fileName(),
+                        fetchResult.contentType()
+                );
+            }
 
             TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
             txTemplate.executeWithoutResult(status -> {
@@ -262,76 +264,11 @@ public class KnowledgeDocumentScheduleJob {
         }
     }
 
-    private RemoteFetchResult fetchRemoteIfChanged(KnowledgeDocumentDO document, KnowledgeDocumentScheduleDO schedule) {
-        long maxFileSizeBytes = maxFileSize.toBytes();
-        String url = document.getSourceLocation();
-        if (!StringUtils.hasText(url)) {
-            throw new ClientException("文档来源地址为空");
-        }
-        url = url.trim();
-
-        HttpClientHelper.HttpHeadResponse headResponse = null;
-        try {
-            headResponse = httpClientHelper.head(url, Map.of());
-        } catch (Exception e) {
-            log.debug("HEAD 获取失败，尝试直接下载: {}", url, e);
-        }
-
-        if (headResponse != null) {
-            if (maxFileSizeBytes > 0 && headResponse.contentLength() != null && headResponse.contentLength() > maxFileSizeBytes) {
-                throw new ClientException("远程文件大小超过限制: " + maxFileSizeBytes + " bytes");
-            }
-            String etag = trim(headResponse.etag());
-            String lastModified = trim(headResponse.lastModified());
-            boolean etagMatch = StringUtils.hasText(etag) && etag.equals(trim(schedule.getLastEtag()));
-            boolean modifiedMatch = StringUtils.hasText(lastModified) && lastModified.equals(trim(schedule.getLastModified()));
-            if (etagMatch || modifiedMatch) {
-                return RemoteFetchResult.skipped("远程文件未变化", etag, lastModified, schedule.getLastContentHash());
-            }
-        }
-
-        HttpClientHelper.HttpFetchResponse fetchResponse = maxFileSizeBytes > 0
-                ? httpClientHelper.getWithLimit(url, Map.of(), maxFileSizeBytes)
-                : httpClientHelper.get(url, Map.of());
-        byte[] body = fetchResponse.body() == null ? new byte[0] : fetchResponse.body();
-        if (body.length == 0) {
-            throw new ClientException("远程文件内容为空");
-        }
-        String hash = sha256Hex(body);
-        if (StringUtils.hasText(hash) && hash.equals(trim(schedule.getLastContentHash()))) {
-            String etag = StringUtils.hasText(fetchResponse.etag())
-                    ? trim(fetchResponse.etag())
-                    : (headResponse == null ? null : trim(headResponse.etag()));
-            String lastModified = StringUtils.hasText(fetchResponse.lastModified())
-                    ? trim(fetchResponse.lastModified())
-                    : (headResponse == null ? null : trim(headResponse.lastModified()));
-            return RemoteFetchResult.skipped("内容哈希未变化", etag, lastModified, hash);
-        }
-
-        String fileName = StringUtils.hasText(fetchResponse.fileName())
-                ? fetchResponse.fileName()
-                : document.getDocName();
-        String etag = StringUtils.hasText(fetchResponse.etag())
-                ? trim(fetchResponse.etag())
-                : (headResponse == null ? null : trim(headResponse.etag()));
-        String lastModified = StringUtils.hasText(fetchResponse.lastModified())
-                ? trim(fetchResponse.lastModified())
-                : (headResponse == null ? null : trim(headResponse.lastModified()));
-        return RemoteFetchResult.changed(
-                body,
-                fetchResponse.contentType(),
-                fileName,
-                hash,
-                etag,
-                lastModified
-        );
-    }
-
     private void markScheduleSkipped(KnowledgeDocumentScheduleDO schedule,
                                      String execId,
                                      Date startTime,
                                      Date nextRunTime,
-                                     RemoteFetchResult fetchResult) {
+                                     RemoteFileFetcher.RemoteFetchResult fetchResult) {
         Date endTime = new Date();
         KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
         update.setId(schedule.getId());
@@ -362,7 +299,7 @@ public class KnowledgeDocumentScheduleJob {
                                      String execId,
                                      Date startTime,
                                      Date nextRunTime,
-                                     RemoteFetchResult fetchResult,
+                                     RemoteFileFetcher.RemoteFetchResult fetchResult,
                                      StoredFileDTO stored) {
         Date endTime = new Date();
         KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
@@ -451,7 +388,7 @@ public class KnowledgeDocumentScheduleJob {
         if (scheduleId == null) {
             return;
         }
-        Date lockUntil = new Date(System.currentTimeMillis() + Math.max(lockSeconds, 60) * 1000);
+        Date lockUntil = new Date(System.currentTimeMillis() + Math.max(scheduleProperties.getLockSeconds(), 60) * 1000);
         UpdateWrapper<KnowledgeDocumentScheduleDO> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", scheduleId).eq("lock_owner", instanceId);
         KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
@@ -469,27 +406,6 @@ public class KnowledgeDocumentScheduleJob {
         return "kb-schedule-" + host + "-" + UUID.randomUUID();
     }
 
-    private String sha256Hex(byte[] content) {
-        if (content == null) {
-            return null;
-        }
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(content);
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                String value = Integer.toHexString(0xff & b);
-                if (value.length() == 1) {
-                    hex.append('0');
-                }
-                hex.append(value);
-            }
-            return hex.toString();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private String truncate(String value) {
         if (!StringUtils.hasText(value)) {
             return value;
@@ -499,31 +415,5 @@ public class KnowledgeDocumentScheduleJob {
             return trimmed;
         }
         return trimmed.substring(0, 512);
-    }
-
-    private String trim(String value) {
-        return StringUtils.hasText(value) ? value.trim() : null;
-    }
-
-    private record RemoteFetchResult(boolean changed,
-                                     byte[] body,
-                                     String contentType,
-                                     String fileName,
-                                     String contentHash,
-                                     String etag,
-                                     String lastModified,
-                                     String message) {
-        static RemoteFetchResult skipped(String message, String etag, String lastModified, String contentHash) {
-            return new RemoteFetchResult(false, null, null, null, contentHash, etag, lastModified, message);
-        }
-
-        static RemoteFetchResult changed(byte[] body,
-                                         String contentType,
-                                         String fileName,
-                                         String contentHash,
-                                         String etag,
-                                         String lastModified) {
-            return new RemoteFetchResult(true, body, contentType, fileName, contentHash, etag, lastModified, null);
-        }
     }
 }

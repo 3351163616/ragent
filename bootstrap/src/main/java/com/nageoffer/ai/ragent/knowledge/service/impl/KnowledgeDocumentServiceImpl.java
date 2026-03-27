@@ -20,6 +20,7 @@ package com.nageoffer.ai.ragent.knowledge.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -35,7 +36,6 @@ import com.nageoffer.ai.ragent.core.parser.DocumentParserSelector;
 import com.nageoffer.ai.ragent.core.parser.ParserType;
 import com.nageoffer.ai.ragent.framework.context.UserContext;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
-import com.nageoffer.ai.ragent.framework.exception.ServiceException;
 import com.nageoffer.ai.ragent.infra.embedding.EmbeddingService;
 import com.nageoffer.ai.ragent.ingestion.dao.entity.IngestionPipelineDO;
 import com.nageoffer.ai.ragent.ingestion.dao.mapper.IngestionPipelineMapper;
@@ -43,7 +43,7 @@ import com.nageoffer.ai.ragent.ingestion.domain.context.IngestionContext;
 import com.nageoffer.ai.ragent.ingestion.domain.pipeline.PipelineDefinition;
 import com.nageoffer.ai.ragent.ingestion.engine.IngestionEngine;
 import com.nageoffer.ai.ragent.ingestion.service.IngestionPipelineService;
-import com.nageoffer.ai.ragent.ingestion.util.HttpClientHelper;
+import com.nageoffer.ai.ragent.knowledge.config.KnowledgeScheduleProperties;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkCreateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentPageRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUpdateRequest;
@@ -67,26 +67,22 @@ import com.nageoffer.ai.ragent.knowledge.schedule.CronScheduleHelper;
 import com.nageoffer.ai.ragent.knowledge.service.KnowledgeChunkService;
 import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentScheduleService;
 import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentService;
+import com.nageoffer.ai.ragent.knowledge.handler.RemoteFileFetcher;
 import com.nageoffer.ai.ragent.rag.core.vector.VectorSpaceId;
 import com.nageoffer.ai.ragent.rag.core.vector.VectorStoreService;
 import com.nageoffer.ai.ragent.rag.dto.StoredFileDTO;
 import com.nageoffer.ai.ragent.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
-import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -100,15 +96,14 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
-    private final KnowledgeBaseMapper kbMapper;
-    private final KnowledgeDocumentMapper docMapper;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final KnowledgeDocumentMapper documentMapper;
     private final DocumentParserSelector parserSelector;
     private final ChunkingStrategyFactory chunkingStrategyFactory;
     private final FileStorageService fileStorageService;
     private final VectorStoreService vectorStoreService;
     private final KnowledgeChunkService knowledgeChunkService;
     private final EmbeddingService embeddingService;
-    private final HttpClientHelper httpClientHelper;
     private final ObjectMapper objectMapper;
     private final KnowledgeDocumentScheduleService scheduleService;
     private final IngestionPipelineService ingestionPipelineService;
@@ -117,79 +112,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final KnowledgeDocumentChunkLogMapper chunkLogMapper;
     private final PlatformTransactionManager transactionManager;
     private final KnowledgeDocumentChunkProducer chunkProducer;
-
-    @Value("${kb.chunk.semantic.targetChars:1400}")
-    private int targetChars;
-    @Value("${kb.chunk.semantic.maxChars:1800}")
-    private int maxChars;
-    @Value("${kb.chunk.semantic.minChars:600}")
-    private int minChars;
-    @Value("${kb.chunk.semantic.overlapChars:0}")
-    private int overlapChars;
-    @Value("${rag.knowledge.schedule.min-interval-seconds:60}")
-    private long scheduleMinIntervalSeconds;
-    @Value("${spring.servlet.multipart.max-file-size:50MB}")
-    private DataSize maxUploadFileSize;
+    private final KnowledgeScheduleProperties scheduleProperties;
+    private final RemoteFileFetcher remoteFileFetcher;
 
     @Override
-    public KnowledgeDocumentVO upload(String kbId, KnowledgeDocumentUploadRequest request, MultipartFile file) {
-        KnowledgeBaseDO kbDO = kbMapper.selectById(kbId);
+    public KnowledgeDocumentVO upload(String kbId, KnowledgeDocumentUploadRequest requestParam, MultipartFile file) {
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         Assert.notNull(kbDO, () -> new ClientException("知识库不存在"));
 
-        SourceType sourceType = normalizeSourceType(request == null ? null : request.getSourceType(), file);
-        String sourceLocation = request == null ? null : request.getSourceLocation();
-        if (StringUtils.hasText(sourceLocation)) {
-            sourceLocation = sourceLocation.trim();
-        }
-        boolean scheduleEnabled = request != null && Boolean.TRUE.equals(request.getScheduleEnabled());
-        if (SourceType.FILE == sourceType) {
-            scheduleEnabled = false;
-        }
-        String scheduleCron = request == null ? null : request.getScheduleCron();
-        if (StringUtils.hasText(scheduleCron)) {
-            scheduleCron = scheduleCron.trim();
-        }
-
-        if (SourceType.URL == sourceType && !StringUtils.hasText(sourceLocation)) {
-            throw new ClientException("来源地址不能为空");
-        }
-        if (scheduleEnabled && !StringUtils.hasText(scheduleCron)) {
-            throw new ClientException("定时表达式不能为空");
-        }
-        if (scheduleEnabled) {
-            try {
-                if (CronScheduleHelper.isIntervalLessThan(scheduleCron, new java.util.Date(), scheduleMinIntervalSeconds)) {
-                    throw new ClientException("定时周期不能小于 " + scheduleMinIntervalSeconds + " 秒");
-                }
-            } catch (IllegalArgumentException e) {
-                throw new ClientException("定时表达式不合法");
-            }
-        }
-
-        StoredFileDTO stored = resolveStoredFile(kbDO.getCollectionName(), sourceType, sourceLocation, file);
-
-        ProcessMode processMode = ProcessMode.normalize(request == null ? null : request.getProcessMode());
-        ChunkingMode chunkingMode = null;
-        String chunkConfig = null;
-        String pipelineId = null;
-
-        if (ProcessMode.CHUNK == processMode) {
-            // 分块模式：解析分块策略和配置
-            chunkingMode = resolveChunkingMode(request == null ? null : request.getChunkStrategy());
-            chunkConfig = buildChunkConfigJson(chunkingMode, request);
-        } else if (ProcessMode.PIPELINE == processMode) {
-            // Pipeline模式：验证Pipeline ID
-            if (request == null || !StringUtils.hasText(request.getPipelineId())) {
-                throw new ClientException("使用Pipeline模式时，必须指定Pipeline ID");
-            }
-            pipelineId = request.getPipelineId();
-            // 验证Pipeline是否存在
-            try {
-                ingestionPipelineService.get(request.getPipelineId());
-            } catch (Exception e) {
-                throw new ClientException("指定的Pipeline不存在: " + request.getPipelineId());
-            }
-        }
+        SourceType sourceType = SourceType.normalize(requestParam.getSourceType());
+        validateSourceAndSchedule(sourceType, requestParam);
+        StoredFileDTO stored = resolveStoredFile(kbDO.getCollectionName(), sourceType, requestParam.getSourceLocation(), file);
+        ProcessModeConfig modeConfig = resolveProcessModeConfig(requestParam);
 
         KnowledgeDocumentDO documentDO = KnowledgeDocumentDO.builder()
                 .kbId(kbId)
@@ -201,17 +135,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .fileSize(stored.getSize())
                 .status(DocumentStatus.PENDING.getCode())
                 .sourceType(sourceType.getValue())
-                .sourceLocation(SourceType.URL == sourceType ? sourceLocation : null)
-                .scheduleEnabled(scheduleEnabled ? 1 : 0)
-                .scheduleCron(scheduleEnabled ? scheduleCron : null)
-                .processMode(processMode.getValue())
-                .chunkStrategy(chunkingMode != null ? chunkingMode.getValue() : null)
-                .chunkConfig(chunkConfig)
-                .pipelineId(pipelineId)
+                .sourceLocation(SourceType.URL == sourceType ? StrUtil.trimToNull(requestParam.getSourceLocation()) : null)
+                .scheduleEnabled(isScheduleEnabled(sourceType, requestParam) ? 1 : 0)
+                .scheduleCron(isScheduleEnabled(sourceType, requestParam) ? StrUtil.trimToNull(requestParam.getScheduleCron()) : null)
+                .processMode(modeConfig.processMode().getValue())
+                .chunkStrategy(modeConfig.chunkingMode() != null ? modeConfig.chunkingMode().getValue() : null)
+                .chunkConfig(modeConfig.chunkConfig())
+                .pipelineId(modeConfig.pipelineId())
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
                 .build();
-        docMapper.insert(documentDO);
+        documentMapper.insert(documentDO);
 
         return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
@@ -220,7 +154,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Transactional(rollbackFor = Exception.class)
     public void startChunk(String docId) {
         // 原子 CAS 更新：WHERE status != 'running'，并发请求只有一个能成功
-        int updated = docMapper.update(
+        int updated = documentMapper.update(
                 new LambdaUpdateWrapper<KnowledgeDocumentDO>()
                         .set(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
                         .set(KnowledgeDocumentDO::getUpdatedBy, UserContext.getUsername())
@@ -229,12 +163,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         );
         if (updated == 0) {
             // 文档不存在或已在分块中，查一下给出准确提示
-            KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+            KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
             Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
             throw new ClientException("文档分块操作正在进行中，请稍后再试");
         }
 
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         scheduleService.upsertSchedule(documentDO);
         // 发送 MQ 消息，由消费者异步执行耗时的分块任务
         chunkProducer.sendChunkEvent(KnowledgeDocumentChunkEvent.builder()
@@ -246,7 +180,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public void executeChunk(String docId) {
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         if (documentDO == null) {
             log.warn("文档不存在，跳过分块任务, docId={}", docId);
             return;
@@ -326,7 +260,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     .status(DocumentStatus.SUCCESS.getCode())
                     .updatedBy(UserContext.getUsername())
                     .build();
-            docMapper.updateById(updateDocumentDO);
+            documentMapper.updateById(updateDocumentDO);
         });
         return chunks.size();
     }
@@ -351,8 +285,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      * 使用分块策略处理文档，失败直接抛异常，由 runChunkTask 统一处理错误状态
      */
     private ChunkProcessResult runChunkProcess(KnowledgeDocumentDO documentDO) {
-        ChunkingMode chunkingMode = resolveChunkingMode(documentDO.getChunkStrategy());
-        KnowledgeBaseDO kbDO = kbMapper.selectById(documentDO.getKbId());
+        ChunkingMode chunkingMode = ChunkingMode.fromValue(documentDO.getChunkStrategy());
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String embeddingModel = kbDO.getEmbeddingModel();
         ChunkingOptions config = buildChunkingOptions(chunkingMode, documentDO, embeddingModel);
 
@@ -375,6 +309,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private record ChunkProcessResult(List<VectorChunk> chunks, long extractDuration, long chunkDuration) {
     }
 
+    private record ProcessModeConfig(ProcessMode processMode, ChunkingMode chunkingMode, String chunkConfig, String pipelineId) {
+    }
+
     /**
      * 使用 Pipeline 处理文档，失败直接抛异常，由 runChunkTask 统一处理错误状态
      */
@@ -386,7 +323,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new IllegalStateException("Pipeline模式下Pipeline ID为空：docId=" + docId);
         }
 
-        KnowledgeBaseDO kbDO = kbMapper.selectById(documentDO.getKbId());
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
 
         PipelineDefinition pipelineDef = ingestionPipelineService.getDefinition(pipelineId);
 
@@ -438,14 +375,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             update.setId(docId);
             update.setStatus(DocumentStatus.FAILED.getCode());
             update.setUpdatedBy(UserContext.getUsername());
-            docMapper.updateById(update);
+            documentMapper.updateById(update);
         });
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String docId) {
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
 
         knowledgeChunkService.deleteByDocId(docId);
@@ -455,7 +392,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         documentDO.setDeleted(1);
         documentDO.setUpdatedBy(UserContext.getUsername());
-        docMapper.deleteById(documentDO);
+        documentMapper.deleteById(documentDO);
 
         String collectionName = resolveCollectionName(documentDO.getKbId());
         vectorStoreService.deleteDocumentVectors(collectionName, docId);
@@ -464,7 +401,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public KnowledgeDocumentVO get(String docId) {
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
         return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
@@ -472,7 +409,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(String docId, KnowledgeDocumentUpdateRequest requestParam) {
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
 
         String docName = requestParam == null ? null : requestParam.getDocName();
@@ -484,7 +421,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         update.setId(documentDO.getId());
         update.setDocName(docName.trim());
         update.setUpdatedBy(UserContext.getUsername());
-        docMapper.updateById(update);
+        documentMapper.updateById(update);
     }
 
     @Override
@@ -497,7 +434,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .eq(requestParam.getStatus() != null && !requestParam.getStatus().isBlank(), KnowledgeDocumentDO::getStatus, requestParam.getStatus())
                 .orderByDesc(KnowledgeDocumentDO::getCreateTime);
 
-        return docMapper.selectPage(pageParam, queryWrapper)
+        return documentMapper.selectPage(pageParam, queryWrapper)
                 .convert(each -> BeanUtil.toBean(each, KnowledgeDocumentVO.class));
     }
 
@@ -514,7 +451,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .like(KnowledgeDocumentDO::getDocName, keyword)
                 .orderByDesc(KnowledgeDocumentDO::getUpdateTime);
 
-        IPage<KnowledgeDocumentDO> result = docMapper.selectPage(mpPage, qw);
+        IPage<KnowledgeDocumentDO> result = documentMapper.selectPage(mpPage, qw);
         List<KnowledgeDocumentSearchVO> records = result.getRecords().stream()
                 .map(each -> BeanUtil.toBean(each, KnowledgeDocumentSearchVO.class))
                 .toList();
@@ -532,7 +469,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return records;
         }
 
-        List<KnowledgeBaseDO> bases = kbMapper.selectByIds(kbIds);
+        List<KnowledgeBaseDO> bases = knowledgeBaseMapper.selectByIds(kbIds);
         Map<String, String> nameMap = new HashMap<>();
         if (bases != null) {
             for (KnowledgeBaseDO base : bases) {
@@ -548,11 +485,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void enable(String docId, boolean enabled) {
-        KnowledgeDocumentDO documentDO = docMapper.selectById(docId);
+        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
         documentDO.setEnabled(enabled ? 1 : 0);
         documentDO.setUpdatedBy(UserContext.getUsername());
-        docMapper.updateById(documentDO);
+        documentMapper.updateById(documentDO);
         scheduleService.syncScheduleIfExists(documentDO);
 
         // 同步更新 Chunk 表的状态
@@ -564,7 +501,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             vectorStoreService.deleteDocumentVectors(collectionName, docId);
         } else {
             // 启用文档时，根据文档分块记录重建向量索引
-            KnowledgeBaseDO kbDO = kbMapper.selectById(documentDO.getKbId());
+            KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
             String collectionName = kbDO.getCollectionName();
             String embeddingModel = kbDO.getEmbeddingModel();
             List<KnowledgeChunkVO> chunks = knowledgeChunkService.listByDocId(docId);
@@ -640,7 +577,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     private String resolveCollectionName(String kbId) {
-        return kbMapper.selectById(kbId).getCollectionName();
+        return knowledgeBaseMapper.selectById(kbId).getCollectionName();
     }
 
     private List<Float> embedContent(String content, String embeddingModel) {
@@ -650,15 +587,48 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return embeddingService.embed(content, embeddingModel);
     }
 
-    private SourceType normalizeSourceType(String sourceType, MultipartFile file) {
-        if (!StringUtils.hasText(sourceType)) {
-            return file == null ? SourceType.URL : SourceType.FILE;
+    private boolean isScheduleEnabled(SourceType sourceType, KnowledgeDocumentUploadRequest request) {
+        return SourceType.URL == sourceType && Boolean.TRUE.equals(request.getScheduleEnabled());
+    }
+
+    private void validateSourceAndSchedule(SourceType sourceType, KnowledgeDocumentUploadRequest request) {
+        String sourceLocation = StrUtil.trimToNull(request.getSourceLocation());
+        if (SourceType.URL == sourceType && !StringUtils.hasText(sourceLocation)) {
+            throw new ClientException("来源地址不能为空");
         }
-        SourceType result = SourceType.fromValue(sourceType);
-        if (result == null) {
-            throw new ClientException("不支持的来源类型: " + sourceType);
+        if (!isScheduleEnabled(sourceType, request)) {
+            return;
         }
-        return result;
+        String scheduleCron = StrUtil.trimToNull(request.getScheduleCron());
+        if (!StringUtils.hasText(scheduleCron)) {
+            throw new ClientException("定时表达式不能为空");
+        }
+        try {
+            if (CronScheduleHelper.isIntervalLessThan(scheduleCron, new java.util.Date(), scheduleProperties.getMinIntervalSeconds())) {
+                throw new ClientException("定时周期不能小于 " + scheduleProperties.getMinIntervalSeconds() + " 秒");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new ClientException("定时表达式不合法");
+        }
+    }
+
+    private ProcessModeConfig resolveProcessModeConfig(KnowledgeDocumentUploadRequest request) {
+        ProcessMode processMode = ProcessMode.normalize(request.getProcessMode());
+        if (ProcessMode.CHUNK == processMode) {
+            ChunkingMode chunkingMode = ChunkingMode.fromValue(request.getChunkStrategy());
+            String chunkConfig = buildChunkConfigJson(chunkingMode, request);
+            return new ProcessModeConfig(processMode, chunkingMode, chunkConfig, null);
+        } else {
+            if (!StringUtils.hasText(request.getPipelineId())) {
+                throw new ClientException("使用Pipeline模式时，必须指定Pipeline ID");
+            }
+            try {
+                ingestionPipelineService.get(request.getPipelineId());
+            } catch (Exception e) {
+                throw new ClientException("指定的Pipeline不存在: " + request.getPipelineId());
+            }
+            return new ProcessModeConfig(processMode, null, null, request.getPipelineId());
+        }
     }
 
     private StoredFileDTO resolveStoredFile(String bucketName, SourceType sourceType, String sourceLocation, MultipartFile file) {
@@ -666,176 +636,34 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             Assert.notNull(file, () -> new ClientException("上传文件不能为空"));
             return fileStorageService.upload(bucketName, file);
         }
-
-        return resolveRemoteStoredFile(bucketName, sourceLocation);
-    }
-
-    private StoredFileDTO resolveRemoteStoredFile(String bucketName, String sourceLocation) {
-        long maxBytes = maxUploadFileSize.toBytes();
-        HttpClientHelper.HttpHeadResponse headResponse = null;
-        try {
-            headResponse = httpClientHelper.head(sourceLocation, Map.of());
-        } catch (Exception e) {
-            log.debug("HEAD 获取失败，改为直接流式下载: {}", sourceLocation, e);
-        }
-        Long headContentLength = headResponse == null ? null : headResponse.contentLength();
-        if (maxBytes > 0 && headContentLength != null && headContentLength > maxBytes) {
-            throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes");
-        }
-
-        try (HttpClientHelper.HttpFetchStream response = httpClientHelper.openStream(sourceLocation, Map.of(), maxBytes)) {
-            Long contentLength = response.contentLength() != null ? response.contentLength() : headContentLength;
-            String fileName = resolveRemoteFileName(response.fileName(), headResponse == null ? null : headResponse.fileName());
-            String contentType = StringUtils.hasText(response.contentType())
-                    ? response.contentType()
-                    : (headResponse == null ? null : headResponse.contentType());
-            if (contentLength != null) {
-                if (contentLength == 0) {
-                    throw new ClientException("远程文件内容为空");
-                }
-                return fileStorageService.upload(bucketName, response.bodyStream(), contentLength, fileName, contentType);
-            }
-            return uploadRemoteStreamWithTempFile(bucketName, response.bodyStream(), fileName, contentType, maxBytes);
-        }
-    }
-
-    private StoredFileDTO uploadRemoteStreamWithTempFile(String bucketName, InputStream remoteStream, String fileName,
-                                                         String contentType, long maxBytes) {
-        Path tempFile = null;
-        try {
-            tempFile = Files.createTempFile("knowledge-upload-", ".tmp");
-            long size = copyToTempFile(remoteStream, tempFile, maxBytes);
-            if (size == 0) {
-                throw new ClientException("远程文件内容为空");
-            }
-            try (InputStream tempInputStream = Files.newInputStream(tempFile)) {
-                return fileStorageService.upload(bucketName, tempInputStream, size, fileName, contentType);
-            }
-        } catch (IOException e) {
-            throw new ServiceException("远程文件上传失败: " + e.getMessage());
-        } finally {
-            if (tempFile != null) {
-                try {
-                    Files.deleteIfExists(tempFile);
-                } catch (IOException e) {
-                    log.warn("删除远程上传临时文件失败: {}", tempFile, e);
-                }
-            }
-        }
-    }
-
-    private long copyToTempFile(InputStream inputStream, Path tempFile, long maxBytes) throws IOException {
-        long total = 0;
-        try (var outputStream = Files.newOutputStream(tempFile)) {
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                total += len;
-                if (maxBytes > 0 && total > maxBytes) {
-                    throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes");
-                }
-                outputStream.write(buffer, 0, len);
-            }
-            return total;
-        }
-    }
-
-    private String resolveRemoteFileName(String responseFileName, String headFileName) {
-        if (StringUtils.hasText(responseFileName)) {
-            return responseFileName;
-        }
-        if (StringUtils.hasText(headFileName)) {
-            return headFileName;
-        }
-        return "remote-file";
-    }
-
-    private ChunkingMode resolveChunkingMode(String mode) {
-        if (!StringUtils.hasText(mode)) {
-            return ChunkingMode.STRUCTURE_AWARE;
-        }
-        return ChunkingMode.fromValue(mode);
+        return remoteFileFetcher.fetchAndStore(bucketName, sourceLocation);
     }
 
     private ChunkingOptions buildChunkingOptions(ChunkingMode mode, KnowledgeDocumentDO documentDO, String embeddingModel) {
-        if (mode == null) {
-            mode = ChunkingMode.STRUCTURE_AWARE;
-        }
         Map<String, Object> config = parseChunkConfig(documentDO.getChunkConfig());
-        if (mode == ChunkingMode.FIXED_SIZE) {
-            Integer chunkSize = getConfigInt(config, "chunkSize", 512);
-            Integer overlapSize = getConfigInt(config, "overlapSize", 128);
-            Map<String, Object> metadata = new HashMap<>();
-            if (StringUtils.hasText(embeddingModel)) {
-                metadata.put("embeddingModel", embeddingModel);
-            }
-            return ChunkingOptions.builder()
-                    .chunkSize(chunkSize)
-                    .overlapSize(overlapSize)
-                    .metadata(metadata)
-                    .build();
-        }
-        Integer target = getConfigInt(config, "targetChars", targetChars);
-        Integer max = getConfigInt(config, "maxChars", maxChars);
-        Integer min = getConfigInt(config, "minChars", minChars);
-        Integer overlap = getConfigInt(config, "overlapChars", overlapChars);
-
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("targetChars", target);
-        metadata.put("maxChars", max);
-        metadata.put("minChars", min);
-        metadata.put("overlapChars", overlap);
-        if (StringUtils.hasText(embeddingModel)) {
-            metadata.put("embeddingModel", embeddingModel);
-        }
-
-        return ChunkingOptions.builder()
-                .chunkSize(target)
-                .overlapSize(overlap)
-                .metadata(metadata)
-                .build();
+        return mode.createOptions(config, embeddingModel);
     }
 
     private String buildChunkConfigJson(ChunkingMode mode, KnowledgeDocumentUploadRequest request) {
-        if (request == null) {
+        if (request == null || !StringUtils.hasText(request.getChunkConfig())) {
             return null;
-        }
-        if (StringUtils.hasText(request.getChunkConfig())) {
-            return request.getChunkConfig().trim();
         }
         if (mode == null) {
             mode = ChunkingMode.STRUCTURE_AWARE;
         }
-        Map<String, Object> params = new HashMap<>();
-        if (mode == ChunkingMode.FIXED_SIZE) {
-            if (request.getChunkSize() != null) {
-                params.put("chunkSize", request.getChunkSize());
-            }
-            if (request.getOverlapSize() != null) {
-                params.put("overlapSize", request.getOverlapSize());
-            }
-        } else {
-            if (request.getTargetChars() != null) {
-                params.put("targetChars", request.getTargetChars());
-            }
-            if (request.getMaxChars() != null) {
-                params.put("maxChars", request.getMaxChars());
-            }
-            if (request.getMinChars() != null) {
-                params.put("minChars", request.getMinChars());
-            }
-            if (request.getOverlapChars() != null) {
-                params.put("overlapChars", request.getOverlapChars());
-            }
-        }
-        if (params.isEmpty()) {
-            return null;
-        }
+        String json = request.getChunkConfig().trim();
+        Map<String, Object> config;
         try {
-            return objectMapper.writeValueAsString(params);
+            config = objectMapper.readValue(json, Map.class);
         } catch (Exception e) {
-            throw new ServiceException("分块参数序列化失败");
+            throw new ClientException("分块参数JSON格式不合法");
         }
+        for (String key : mode.getDefaultConfig().keySet()) {
+            if (!config.containsKey(key)) {
+                throw new ClientException("分块参数缺少必要字段: " + key);
+            }
+        }
+        return json;
     }
 
     private Map<String, Object> parseChunkConfig(String json) {
@@ -848,27 +676,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             log.warn("分块参数解析失败: {}", json, e);
             return Map.of();
         }
-    }
-
-    private Integer getConfigInt(Map<String, Object> config, String key, Integer defaultValue) {
-        if (config == null || config.isEmpty()) {
-            return defaultValue;
-        }
-        Object value = config.get(key);
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        if (value instanceof String str && StringUtils.hasText(str)) {
-            try {
-                return Integer.parseInt(str.trim());
-            } catch (NumberFormatException e) {
-                return defaultValue;
-            }
-        }
-        return defaultValue;
     }
 
     private void deleteStoredFileQuietly(KnowledgeDocumentDO documentDO) {

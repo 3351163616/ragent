@@ -20,21 +20,20 @@ package com.nageoffer.ai.ragent.core.chunk;
 import java.util.Map;
 
 /**
- * 分块配置 sealed interface
- * 通过具体 record 实现类型安全的配置传递，消除魔法字符串
+ * 固定大小切分配置
  *
- * @see FixedSizeOptions 固定大小切分配置
- * @see TextBoundaryOptions 文本边界切分配置（句子/段落/结构感知）
+ * @param chunkSize      目标块大小（字符数）
+ * @param overlapSize    相邻块重叠大小（字符数）
+ * @param embeddingModel 嵌入模型 ID，null 时使用系统默认模型
  */
-public sealed interface ChunkingOptions permits FixedSizeOptions, TextBoundaryOptions {
+public record FixedSizeOptions(
+        int chunkSize,
+        int overlapSize,
+        String embeddingModel
+) implements ChunkingOptions {
 
-    /**
-     * 嵌入模型 ID，null 时使用系统默认模型
-     */
-    String embeddingModel();
-
-    /**
-     * 将配置导出为 Map，用于 API 返回和配置校验
-     */
-    Map<String, Integer> toConfigMap();
+    @Override
+    public Map<String, Integer> toConfigMap() {
+        return Map.of("chunkSize", chunkSize, "overlapSize", overlapSize);
+    }
 }

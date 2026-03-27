@@ -73,11 +73,8 @@ public class ChunkerNode implements IngestionNode {
     }
 
     private ChunkingOptions convertToChunkConfig(ChunkerSettings settings) {
-        return ChunkingOptions.builder()
-                .chunkSize(settings.getChunkSize())
-                .overlapSize(settings.getOverlapSize())
-                .separator(settings.getSeparator())
-                .build();
+        return settings.getStrategy().createDefaultOptions(
+                settings.getChunkSize(), settings.getOverlapSize(), null);
     }
 
     private List<VectorChunk> convertToVectorChunks(List<VectorChunk> results) {

@@ -34,8 +34,6 @@ import java.util.stream.Collectors;
  */
 public abstract class AbstractEmbeddingChunker implements ChunkingStrategy {
 
-    private static final String EMBEDDING_MODEL_KEY = "embeddingModel";
-
     private final ModelSelector modelSelector;
     private final Map<String, EmbeddingClient> embeddingClientsByProvider;
 
@@ -63,7 +61,7 @@ public abstract class AbstractEmbeddingChunker implements ChunkingStrategy {
     protected abstract List<VectorChunk> doChunk(String text, ChunkingOptions config);
 
     protected ModelTarget resolveEmbeddingTarget(ChunkingOptions config) {
-        String modelId = config == null ? null : config.getMetadata(EMBEDDING_MODEL_KEY, null);
+        String modelId = config == null ? null : config.embeddingModel();
         List<ModelTarget> targets = modelSelector.selectEmbeddingCandidates();
         if (targets == null || targets.isEmpty()) {
             throw new ClientException("No embedding model available");

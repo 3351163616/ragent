@@ -21,6 +21,7 @@ import cn.hutool.core.util.IdUtil;
 import com.nageoffer.ai.ragent.core.chunk.AbstractEmbeddingChunker;
 import com.nageoffer.ai.ragent.core.chunk.ChunkingMode;
 import com.nageoffer.ai.ragent.core.chunk.ChunkingOptions;
+import com.nageoffer.ai.ragent.core.chunk.FixedSizeOptions;
 import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
 import com.nageoffer.ai.ragent.infra.embedding.EmbeddingClient;
 import com.nageoffer.ai.ragent.infra.model.ModelSelector;
@@ -61,8 +62,9 @@ public class FixedSizeTextChunker extends AbstractEmbeddingChunker {
         // 1) 更保守的归一化：只修 URL 明显断行，不吞正常换行
         String normalized = normalizeText(text);
 
-        Integer configuredChunkSize = config.getChunkSize();
-        if (configuredChunkSize != null && configuredChunkSize == -1) {
+        FixedSizeOptions opts = (FixedSizeOptions) config;
+        int configuredChunkSize = opts.chunkSize();
+        if (configuredChunkSize == -1) {
             return List.of(VectorChunk.builder()
                     .chunkId(IdUtil.getSnowflakeNextIdStr())
                     .index(0)
@@ -70,8 +72,8 @@ public class FixedSizeTextChunker extends AbstractEmbeddingChunker {
                     .build());
         }
 
-        int chunkSize = Math.max(1, configuredChunkSize == null ? 512 : configuredChunkSize);
-        int overlap = Math.max(0, config.getOverlapSize());
+        int chunkSize = Math.max(1, configuredChunkSize);
+        int overlap = Math.max(0, opts.overlapSize());
 
         if (chunkSize > 1) {
             overlap = Math.min(overlap, chunkSize - 1);
