@@ -31,10 +31,10 @@ import java.nio.charset.StandardCharsets;
  */
 @RequiredArgsConstructor
 @Component
-@ConditionalOnProperty(name = "cache.redis.prefix")
+@ConditionalOnProperty(name = "framework.cache.redis.prefix")
 public class RedisKeySerializer implements RedisSerializer<String> {
 
-    @Value("${cache.redis.prefix:}")
+    @Value("${framework.cache.redis.prefix:}")
     private String keyPrefix;
 
     @Override
