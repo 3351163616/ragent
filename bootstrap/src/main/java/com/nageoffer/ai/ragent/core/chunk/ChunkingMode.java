@@ -26,9 +26,9 @@ import java.util.Map;
 /**
  * 文档分块策略枚举
  * 定义将文档内容切分成块的不同策略，适用于不同的文档类型和场景
- * 策略值使用小写 snake_case，如 fixed_size、sentence
+ * 策略值使用小写 snake_case，如 fixed_size、structure_aware
  * <p>
- * 每个枚举常量实现三个 abstract 方法，负责提供默认配置和构建类型安全的 ChunkingOptions
+ * 每个枚举常量实现两个 abstract 方法，负责构建类型安全的 ChunkingOptions
  */
 @Getter
 public enum ChunkingMode {
@@ -38,19 +38,17 @@ public enum ChunkingMode {
      */
     FIXED_SIZE("fixed_size", "固定大小", true) {
         @Override
-        public ChunkingOptions createOptions(Map<String, Object> config, String embeddingModel) {
+        public ChunkingOptions createOptions(Map<String, Object> config) {
             return new FixedSizeOptions(
                     toInt(config, "chunkSize", 512),
-                    toInt(config, "overlapSize", 128),
-                    embeddingModel);
+                    toInt(config, "overlapSize", 128));
         }
 
         @Override
-        public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize, String embeddingModel) {
+        public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
             return new FixedSizeOptions(
                     targetSize != null ? targetSize : 512,
-                    overlapSize != null ? overlapSize : 128,
-                    embeddingModel);
+                    overlapSize != null ? overlapSize : 128);
         }
     },
 
@@ -59,39 +57,26 @@ public enum ChunkingMode {
      */
     STRUCTURE_AWARE("structure_aware", "语义感知（Markdown友好）", true) {
         @Override
-        public ChunkingOptions createOptions(Map<String, Object> config, String embeddingModel) {
+        public ChunkingOptions createOptions(Map<String, Object> config) {
             return new TextBoundaryOptions(
                     toInt(config, "targetChars", 1400),
                     toInt(config, "overlapChars", 0),
                     toInt(config, "maxChars", 1800),
-                    toInt(config, "minChars", 600),
-                    embeddingModel);
+                    toInt(config, "minChars", 600));
         }
 
         @Override
-        public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize, String embeddingModel) {
+        public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
             return new TextBoundaryOptions(
                     targetSize != null ? targetSize : 1400,
                     overlapSize != null ? overlapSize : 0,
                     1800,
-                    600,
-                    embeddingModel);
+                    600);
         }
     };
 
-    /**
-     * 策略值（小写 snake_case）
-     */
     private final String value;
-
-    /**
-     * 策略展示名称
-     */
     private final String label;
-
-    /**
-     * 是否对前端可见
-     */
     private final boolean visible;
 
     ChunkingMode(String value, String label, boolean visible) {
@@ -105,26 +90,23 @@ public enum ChunkingMode {
      * 从 createOptions 派生，默认值只维护一份
      */
     public Map<String, Integer> getDefaultConfig() {
-        return createOptions(Map.of(), null).toConfigMap();
+        return createOptions(Map.of()).toConfigMap();
     }
 
     /**
      * 从 DB/JSON 存储的原始配置构建类型安全的 ChunkingOptions
-     * 键名为模式特定的（如 chunkSize / targetChars）
      *
-     * @param config         原始配置 Map（来自 DB JSON 解析）
-     * @param embeddingModel 嵌入模型 ID，可为 null
+     * @param config 原始配置 Map（来自 DB JSON 解析）
      */
-    public abstract ChunkingOptions createOptions(Map<String, Object> config, String embeddingModel);
+    public abstract ChunkingOptions createOptions(Map<String, Object> config);
 
     /**
      * 从通用参数构建 ChunkingOptions（供 ChunkerNode 等不感知具体键名的调用方使用）
      *
-     * @param targetSize     通用的目标块大小，null 时使用默认值
-     * @param overlapSize    通用的重叠大小，null 时使用默认值
-     * @param embeddingModel 嵌入模型 ID，可为 null
+     * @param targetSize  通用的目标块大小，null 时使用默认值
+     * @param overlapSize 通用的重叠大小，null 时使用默认值
      */
-    public abstract ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize, String embeddingModel);
+    public abstract ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize);
 
     // ============ 解析工具 ============
 
@@ -143,9 +125,6 @@ public enum ChunkingMode {
         return defaultValue;
     }
 
-    /**
-     * 根据字符串值解析策略
-     */
     @JsonCreator
     public static ChunkingMode fromValue(String value) {
         if (value == null) {
@@ -166,9 +145,6 @@ public enum ChunkingMode {
         return lower.replace('-', '_');
     }
 
-    /**
-     * 获取序列化值
-     */
     @JsonValue
     public String getValue() {
         return value;

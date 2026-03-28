@@ -116,8 +116,15 @@ const formatSourceLabel = (sourceType?: string | null) => {
 const formatProcessMode = (processMode?: string | null) => {
   const normalized = processMode?.toLowerCase();
   if (normalized === "pipeline") return "数据通道";
-  if (normalized === "chunk") return "分块策略";
-  return "分块策略"; // 默认值
+  if (normalized === "chunk") return "直接分块";
+  return "直接分块";
+};
+
+const formatChunkStrategy = (strategy?: string | null) => {
+  const normalized = strategy?.toLowerCase();
+  if (normalized === "fixed_size") return "固定大小";
+  if (normalized === "structure_aware") return "语义感知（Markdown友好）";
+  return strategy || "-";
 };
 
 export function KnowledgeDocumentsPage() {
@@ -136,7 +143,12 @@ export function KnowledgeDocumentsPage() {
   const [detailTarget, setDetailTarget] = useState<KnowledgeDocument | null>(null);
   const [detailName, setDetailName] = useState("");
   const [detailSaving, setDetailSaving] = useState(false);
-  const [detailPipelineName, setDetailPipelineName] = useState<string>("");
+  const [detailProcessMode, setDetailProcessMode] = useState("chunk");
+  const [detailChunkStrategy, setDetailChunkStrategy] = useState("structure_aware");
+  const [detailPipelineId, setDetailPipelineId] = useState("");
+  const [detailStrategies, setDetailStrategies] = useState<ChunkStrategyOption[]>([]);
+  const [detailPipelines, setDetailPipelines] = useState<IngestionPipeline[]>([]);
+  const [detailConfigValues, setDetailConfigValues] = useState<Record<string, string>>({});
   const [logTarget, setLogTarget] = useState<KnowledgeDocument | null>(null);
   const [logData, setLogData] = useState<PageResult<KnowledgeDocumentChunkLog> | null>(null);
   const [logLoading, setLogLoading] = useState(false);
@@ -184,25 +196,30 @@ export function KnowledgeDocumentsPage() {
   useEffect(() => {
     if (detailTarget) {
       setDetailName(detailTarget.docName || "");
-      // 如果是 pipeline 模式，加载 pipeline 名称
-      if (detailTarget.processMode?.toLowerCase() === "pipeline" && detailTarget.pipelineId) {
-        const loadPipelineName = async () => {
-          try {
-            const result = await getIngestionPipelines(1, 100);
-            const pipeline = result.records?.find(p => p.id === String(detailTarget.pipelineId));
-            setDetailPipelineName(pipeline?.name || String(detailTarget.pipelineId));
-          } catch (error) {
-            console.error("加载Pipeline失败", error);
-            setDetailPipelineName(String(detailTarget.pipelineId));
-          }
-        };
-        loadPipelineName();
-      } else {
-        setDetailPipelineName("");
+      const mode = (detailTarget.processMode || "chunk").toLowerCase();
+      setDetailProcessMode(mode);
+      setDetailChunkStrategy((detailTarget.chunkStrategy || "structure_aware").toLowerCase());
+      setDetailPipelineId(detailTarget.pipelineId ? String(detailTarget.pipelineId) : "");
+
+      // 从文档的 chunkConfig JSON 解析参数值
+      const config = parseChunkConfig(detailTarget.chunkConfig);
+      const values: Record<string, string> = {};
+      for (const [k, v] of Object.entries(config)) {
+        values[k] = String(v);
       }
+      setDetailConfigValues(values);
+
+      // 加载策略列表和管道列表
+      getChunkStrategies().then(setDetailStrategies).catch(() => {});
+      getIngestionPipelines(1, 100).then(r => setDetailPipelines(r.records || [])).catch(() => {});
     } else {
       setDetailName("");
-      setDetailPipelineName("");
+      setDetailProcessMode("chunk");
+      setDetailChunkStrategy("structure_aware");
+      setDetailPipelineId("");
+      setDetailConfigValues({});
+      setDetailStrategies([]);
+      setDetailPipelines([]);
     }
   }, [detailTarget]);
 
@@ -264,7 +281,25 @@ export function KnowledgeDocumentsPage() {
     }
     setDetailSaving(true);
     try {
-      await updateDocument(String(detailTarget.id), { docName: nextName });
+      const data: Parameters<typeof updateDocument>[1] = {
+        docName: nextName,
+        processMode: detailProcessMode,
+      };
+      if (detailProcessMode === "chunk") {
+        data.chunkStrategy = detailChunkStrategy;
+        // 根据策略的 defaultConfig keys 组装 chunkConfig JSON
+        const strategy = detailStrategies.find(s => s.value === detailChunkStrategy);
+        if (strategy) {
+          const configObj: Record<string, number> = {};
+          for (const key of Object.keys(strategy.defaultConfig)) {
+            configObj[key] = Number(detailConfigValues[key]) || strategy.defaultConfig[key];
+          }
+          data.chunkConfig = JSON.stringify(configObj);
+        }
+      } else {
+        data.pipelineId = detailPipelineId;
+      }
+      await updateDocument(String(detailTarget.id), data);
       toast.success("更新成功");
       await loadDocuments(current, statusFilter, keyword);
       setDetailTarget(null);
@@ -310,17 +345,19 @@ export function KnowledgeDocumentsPage() {
   const detailSourceType = detailTarget?.sourceType?.toLowerCase();
   const detailIsUrlSource = detailSourceType === "url";
   const detailNameLabel = detailIsUrlSource ? "文档名称" : "本地文件";
-  const detailNameHint = detailIsUrlSource ? "仅支持修改文档名称" : "仅支持修改文件名";
-  const detailConfig = detailTarget ? parseChunkConfig(detailTarget.chunkConfig) : {};
-  const detailChunkStrategy = (detailTarget?.chunkStrategy || "structure_aware").toLowerCase();
-  const detailChunkSize = getConfigNumber(detailConfig, "chunkSize", 512);
-  const detailOverlapSize = getConfigNumber(detailConfig, "overlapSize", 128);
-  const detailTargetChars = getConfigNumber(detailConfig, "targetChars", 1400);
-  const detailMaxChars = getConfigNumber(detailConfig, "maxChars", 1800);
-  const detailMinChars = getConfigNumber(detailConfig, "minChars", 600);
-  const detailOverlapChars = getConfigNumber(detailConfig, "overlapChars", 0);
-  const detailNameChanged = detailTarget ? detailName.trim() !== (detailTarget.docName || "") : false;
-  const detailChunkSizeDisplay = detailChunkSize === INT_MAX ? "不分块" : detailChunkSize;
+
+  // 当策略切换时，用默认值填充配置
+  const handleDetailStrategyChange = (value: string) => {
+    setDetailChunkStrategy(value);
+    const strategy = detailStrategies.find(s => s.value === value);
+    if (strategy) {
+      const values: Record<string, string> = {};
+      for (const [k, v] of Object.entries(strategy.defaultConfig)) {
+        values[k] = String(v);
+      }
+      setDetailConfigValues(values);
+    }
+  };
 
   return (
     <div className="admin-page">
@@ -600,7 +637,7 @@ export function KnowledgeDocumentsPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sidebar-scroll sm:max-w-[620px]" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => (document.activeElement as HTMLElement)?.blur()); }}>
           <DialogHeader>
             <DialogTitle>编辑文档</DialogTitle>
-            <DialogDescription>修改文档名称，查看文档配置信息</DialogDescription>
+            <DialogDescription>修改文档配置，保存后需重新分块才会生效</DialogDescription>
           </DialogHeader>
           {detailTarget ? (
             <div className="space-y-4">
@@ -614,7 +651,6 @@ export function KnowledgeDocumentsPage() {
               <div>
                 <div className="text-sm font-medium mb-2">{detailNameLabel}</div>
                 <Input value={detailName} onChange={(event) => setDetailName(event.target.value)} />
-                <div className="text-sm text-muted-foreground mt-1">{detailNameHint}</div>
               </div>
 
               {detailIsUrlSource && detailTarget.sourceLocation ? (
@@ -626,99 +662,104 @@ export function KnowledgeDocumentsPage() {
                     </div>
                   </div>
                   {detailTarget.scheduleEnabled ? (
-                    <>
-                      <div className="space-y-3 rounded-lg border p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium">开启定时拉取</div>
-                            <div className="text-sm text-muted-foreground">开启后按频率自动更新文档</div>
-                          </div>
-                          <Checkbox checked={Boolean(detailTarget.scheduleEnabled)} disabled />
+                    <div className="space-y-3 rounded-lg border p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-medium">开启定时拉取</div>
+                          <div className="text-sm text-muted-foreground">开启后按频率自动更新文档</div>
                         </div>
-                        {detailTarget.scheduleCron ? (
-                          <div>
-                            <div className="text-sm font-medium mb-2">拉取频率</div>
-                            <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                              {detailTarget.scheduleCron}
-                            </div>
-                            <div className="text-sm text-muted-foreground mt-1">支持 cron 表达式</div>
-                          </div>
-                        ) : null}
+                        <Checkbox checked={Boolean(detailTarget.scheduleEnabled)} disabled />
                       </div>
-                    </>
+                      {detailTarget.scheduleCron ? (
+                        <div>
+                          <div className="text-sm font-medium mb-2">拉取频率</div>
+                          <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+                            {detailTarget.scheduleCron}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                 </>
               ) : null}
 
               <div>
                 <div className="text-sm font-medium mb-2">处理模式</div>
-                <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                  {formatProcessMode(detailTarget.processMode)}
-                </div>
+                <Select value={detailProcessMode} onValueChange={setDetailProcessMode}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chunk">分块策略</SelectItem>
+                    <SelectItem value="pipeline">数据通道</SelectItem>
+                  </SelectContent>
+                </Select>
                 <div className="text-sm text-muted-foreground mt-1">
                   分块策略：直接分块；数据通道：使用Pipeline清洗
                 </div>
               </div>
 
-              {detailTarget.processMode?.toLowerCase() === "pipeline" ? (
+              {detailProcessMode === "pipeline" ? (
                 <div>
-                  <div className="text-sm font-medium mb-2">数据通道名称</div>
-                  <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                    {detailPipelineName || "-"}
-                  </div>
+                  <div className="text-sm font-medium mb-2">数据通道</div>
+                  <Select value={detailPipelineId} onValueChange={setDetailPipelineId}>
+                    <SelectTrigger><SelectValue placeholder="选择数据通道" /></SelectTrigger>
+                    <SelectContent>
+                      {detailPipelines.map(p => (
+                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : null}
 
-              {(!detailTarget.processMode || detailTarget.processMode?.toLowerCase() === "chunk") ? (
+              {detailProcessMode === "chunk" ? (
                 <div className="space-y-3 rounded-lg border p-3">
                   <div>
                     <div className="text-sm font-medium mb-2">分块策略</div>
-                    <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                      {detailChunkStrategy === "fixed_size" ? "fixed_size" : "structure_aware"}
-                    </div>
+                    <Select value={detailChunkStrategy} onValueChange={handleDetailStrategyChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {detailStrategies.map(s => (
+                          <SelectItem key={s.value} value={s.value}>{s.label || s.value}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {detailChunkStrategy === "fixed_size" ? (
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <div className="text-sm font-medium mb-2">块大小</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailChunkSizeDisplay ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["chunkSize"] ?? "512"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, chunkSize: e.target.value }))} />
                         <div className="text-sm text-muted-foreground mt-1">字符数</div>
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">重叠大小</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailOverlapSize ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["overlapSize"] ?? "128"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, overlapSize: e.target.value }))} />
                       </div>
                     </div>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <div className="text-sm font-medium mb-2">理想块大小</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailTargetChars ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["targetChars"] ?? "1400"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, targetChars: e.target.value }))} />
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">块上限</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailMaxChars ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["maxChars"] ?? "1800"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, maxChars: e.target.value }))} />
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">块下限</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailMinChars ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["minChars"] ?? "600"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, minChars: e.target.value }))} />
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">重叠大小</div>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                          {detailOverlapChars ?? "-"}
-                        </div>
+                        <Input type="number" value={detailConfigValues["overlapChars"] ?? "0"}
+                          onChange={e => setDetailConfigValues(v => ({ ...v, overlapChars: e.target.value }))} />
                       </div>
                     </div>
                   )}
@@ -732,7 +773,7 @@ export function KnowledgeDocumentsPage() {
             </Button>
             <Button
               onClick={handleDetailSave}
-              disabled={detailSaving || !detailName.trim() || !detailNameChanged}
+              disabled={detailSaving || !detailName.trim()}
             >
               {detailSaving ? "保存中..." : "保存"}
             </Button>
@@ -757,32 +798,27 @@ export function KnowledgeDocumentsPage() {
                 const chunkLabel = isPipelineLog ? "数据通道耗时" : "分块耗时";
                 return (
                 <div key={log.id} className="rounded-lg border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">执行状态:</span>
-                      <span className={cn(
-                        "text-sm font-medium",
-                        log.status === "success" ? "text-emerald-600" :
-                        log.status === "failed" ? "text-red-600" :
-                        "text-amber-600"
-                      )}>
-                        {formatLogStatus(log.status)}
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(log.createTime)}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">执行状态:</span>
+                    <span className={cn(
+                      "text-sm font-medium",
+                      log.status === "success" ? "text-emerald-600" :
+                      log.status === "failed" ? "text-red-600" :
+                      "text-amber-600"
+                    )}>
+                      {formatLogStatus(log.status)}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">处理模式: </span>
-                      <span>{log.processMode === "pipeline" ? "数据通道" : "分块策略"}</span>
+                      <span>{log.processMode === "pipeline" ? "数据通道" : "直接分块"}</span>
                     </div>
                     {log.processMode === "chunk" && log.chunkStrategy && (
                       <div>
-                        <span className="text-muted-foreground">分块策略: </span>
-                        <span>{log.chunkStrategy}</span>
+                        <span className="text-muted-foreground">切分方式: </span>
+                        <span>{formatChunkStrategy(log.chunkStrategy)}</span>
                       </div>
                     )}
                     {log.processMode === "pipeline" && log.pipelineId && (
@@ -811,17 +847,28 @@ export function KnowledgeDocumentsPage() {
                     {!isPipelineLog && (
                       <div>
                         <span className="text-muted-foreground">向量化: </span>
-                        <span className="font-medium">{formatDuration(log.embeddingDuration)}</span>
+                        <span className="font-medium">{formatDuration(log.embedDuration)}</span>
                       </div>
                     )}
+                    <div>
+                      <span className="text-muted-foreground">持久化: </span>
+                      <span className="font-medium">{formatDuration(log.persistDuration)}</span>
+                    </div>
                     <div>
                       <span className="text-muted-foreground">其他耗时: </span>
                       <span className="font-medium">{formatDuration(log.otherDuration)}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">总耗时: </span>
-                      <span className="font-medium text-slate-900">{formatDuration(log.totalDuration)}</span>
+                      <span className="font-semibold text-blue-600">{formatDuration(log.totalDuration)}</span>
                     </div>
+                  </div>
+
+                  <div className="border-t pt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>执行时间:</span>
+                    <span>{formatDate(log.startTime)}</span>
+                    <span>~</span>
+                    <span>{log.endTime ? formatDate(log.endTime) : "进行中"}</span>
                   </div>
 
                   {log.errorMessage && (

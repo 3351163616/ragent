@@ -66,7 +66,8 @@ export interface KnowledgeDocumentChunkLog {
   pipelineName?: string | null;
   extractDuration?: number | null;
   chunkDuration?: number | null;
-  embeddingDuration?: number | null;
+  embedDuration?: number | null;
+  persistDuration?: number | null;
   otherDuration?: number | null;
   totalDuration?: number | null;
   chunkCount?: number | null;
@@ -238,7 +239,13 @@ export const getDocument = async (docId: string): Promise<KnowledgeDocument> => 
   return api.get<KnowledgeDocument, KnowledgeDocument>(`/knowledge-base/docs/${docId}`);
 };
 
-export const updateDocument = async (docId: string, data: { docName?: string }): Promise<void> => {
+export const updateDocument = async (docId: string, data: {
+  docName?: string;
+  processMode?: string;
+  chunkStrategy?: string;
+  chunkConfig?: string;
+  pipelineId?: string;
+}): Promise<void> => {
   await api.put(`/knowledge-base/docs/${docId}`, data);
 };
 

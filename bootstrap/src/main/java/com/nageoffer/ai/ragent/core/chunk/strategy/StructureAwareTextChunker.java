@@ -19,13 +19,11 @@ package com.nageoffer.ai.ragent.core.chunk.strategy;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import com.nageoffer.ai.ragent.core.chunk.AbstractEmbeddingChunker;
 import com.nageoffer.ai.ragent.core.chunk.ChunkingMode;
 import com.nageoffer.ai.ragent.core.chunk.ChunkingOptions;
+import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategy;
 import com.nageoffer.ai.ragent.core.chunk.TextBoundaryOptions;
 import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
-import com.nageoffer.ai.ragent.infra.embedding.EmbeddingClient;
-import com.nageoffer.ai.ragent.infra.model.ModelSelector;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;
@@ -43,11 +41,7 @@ import java.util.regex.Pattern;
  * - 支持可选的 overlap
  */
 @Component
-public class StructureAwareTextChunker extends AbstractEmbeddingChunker {
-
-    public StructureAwareTextChunker(ModelSelector modelSelector, List<EmbeddingClient> embeddingClients) {
-        super(modelSelector, embeddingClients);
-    }
+public class StructureAwareTextChunker implements ChunkingStrategy {
 
     private static final Pattern HEADING = Pattern.compile("^#{1,6}\\s+.*$");
     private static final Pattern CODE_FENCE = Pattern.compile("^```.*$");
@@ -60,7 +54,7 @@ public class StructureAwareTextChunker extends AbstractEmbeddingChunker {
     }
 
     @Override
-    protected List<VectorChunk> doChunk(String text, ChunkingOptions config) {
+    public List<VectorChunk> chunk(String text, ChunkingOptions config) {
         if (StrUtil.isBlank(text)) return List.of();
 
         TextBoundaryOptions opts = (TextBoundaryOptions) config;

@@ -22,14 +22,12 @@ import java.util.Map;
 /**
  * 固定大小切分配置
  *
- * @param chunkSize      目标块大小（字符数）
- * @param overlapSize    相邻块重叠大小（字符数）
- * @param embeddingModel 嵌入模型 ID，null 时使用系统默认模型
+ * @param chunkSize   目标块大小（字符数）
+ * @param overlapSize 相邻块重叠大小（字符数）
  */
 public record FixedSizeOptions(
         int chunkSize,
-        int overlapSize,
-        String embeddingModel
+        int overlapSize
 ) implements ChunkingOptions {
 
     @Override
