@@ -107,6 +107,8 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
 
     // ----------- 1) 线性扫描生成块 -----------
     private List<Block> segmentToBlocks(String text) {
+        // 统一行尾：Windows \r\n → \n，老 Mac \r → \n
+        text = text.replace("\r\n", "\n").replace("\r", "\n");
         List<Block> blocks = new ArrayList<>();
         int n = text.length();
         int pos = 0;
