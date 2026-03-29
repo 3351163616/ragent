@@ -17,33 +17,20 @@
 
 package com.nageoffer.ai.ragent.framework.mq.producer;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.nageoffer.ai.ragent.framework.mq.MessageWrapper;
 
 /**
- * 消息发送结果
+ * 事务消息回查接口，按 topic 注册到 {@link DelegatingTransactionListener}
+ * <p>
+ * 回查时 Broker 可能将请求发送到任意实例，因此实现类必须基于消息内容（而非内存状态）查询 DB 判断本地事务是否已提交。
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class SendResult {
+public interface TransactionChecker {
 
     /**
-     * 消息 ID
+     * 检查本地事务是否已提交
+     *
+     * @param message 消息体，包含业务载荷，可从中提取业务参数查询 DB
+     * @return true 表示本地事务已提交（消息可投递），false 表示已回滚（消息丢弃）
      */
-    private String messageId;
-
-    /**
-     * 发送是否成功
-     */
-    private boolean success;
-
-    public static SendResult success(String messageId) {
-        return new SendResult(messageId, true);
-    }
-
-    public static SendResult fail(String messageId) {
-        return new SendResult(messageId, false);
-    }
+    boolean check(MessageWrapper<?> message);
 }
