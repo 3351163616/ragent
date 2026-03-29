@@ -436,23 +436,22 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new ClientException("文档名称不能为空");
         }
 
-        KnowledgeDocumentDO update = KnowledgeDocumentDO.builder()
-                .id(documentDO.getId())
-                .docName(docName.trim())
-                .updatedBy(UserContext.getUsername())
-                .build();
+        LambdaUpdateWrapper<KnowledgeDocumentDO> updateWrapper = Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                .eq(KnowledgeDocumentDO::getId, documentDO.getId())
+                .set(KnowledgeDocumentDO::getDocName, docName.trim())
+                .set(KnowledgeDocumentDO::getUpdatedBy, UserContext.getUsername());
 
         // 如果传了 processMode，校验并更新处理配置
         if (StringUtils.hasText(requestParam.getProcessMode())) {
             ProcessMode processMode = ProcessMode.normalize(requestParam.getProcessMode());
-            update.setProcessMode(processMode.getValue());
+            updateWrapper.set(KnowledgeDocumentDO::getProcessMode, processMode.getValue());
 
             if (ProcessMode.CHUNK == processMode) {
                 ChunkingMode chunkingMode = ChunkingMode.fromValue(requestParam.getChunkStrategy());
                 String chunkConfig = validateAndNormalizeChunkConfig(chunkingMode, requestParam.getChunkConfig());
-                update.setChunkStrategy(chunkingMode.getValue());
-                update.setChunkConfig(chunkConfig);
-                update.setPipelineId(null);
+                updateWrapper.set(KnowledgeDocumentDO::getChunkStrategy, chunkingMode.getValue());
+                updateWrapper.set(KnowledgeDocumentDO::getChunkConfig, chunkConfig);
+                updateWrapper.set(KnowledgeDocumentDO::getPipelineId, null);
             } else {
                 if (!StringUtils.hasText(requestParam.getPipelineId())) {
                     throw new ClientException("使用Pipeline模式时，必须指定Pipeline ID");
@@ -462,13 +461,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 } catch (Exception e) {
                     throw new ClientException("指定的Pipeline不存在: " + requestParam.getPipelineId());
                 }
-                update.setPipelineId(requestParam.getPipelineId());
-                update.setChunkStrategy(null);
-                update.setChunkConfig(null);
+                updateWrapper.set(KnowledgeDocumentDO::getPipelineId, requestParam.getPipelineId());
+                updateWrapper.set(KnowledgeDocumentDO::getChunkStrategy, null);
+                updateWrapper.set(KnowledgeDocumentDO::getChunkConfig, null);
             }
         }
 
-        documentMapper.updateById(update);
+        documentMapper.update(updateWrapper);
     }
 
     @Override
