@@ -50,4 +50,9 @@ public class KnowledgeScheduleProperties {
      * 定时拉取最小间隔（秒）
      */
     private Long minIntervalSeconds = 60L;
+
+    /**
+     * RUNNING 状态超时阈值（分钟），超过此时间未完成的文档重置为 FAILED
+     */
+    private Long runningTimeoutMinutes = 30L;
 }

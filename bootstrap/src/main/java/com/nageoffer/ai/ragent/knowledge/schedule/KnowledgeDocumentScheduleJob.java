@@ -18,8 +18,7 @@
 package com.nageoffer.ai.ragent.knowledge.schedule;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.nageoffer.ai.ragent.framework.context.LoginUser;
 import com.nageoffer.ai.ragent.framework.context.UserContext;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
@@ -41,7 +40,6 @@ import com.nageoffer.ai.ragent.rag.dto.StoredFileDTO;
 import com.nageoffer.ai.ragent.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -76,6 +74,26 @@ public class KnowledgeDocumentScheduleJob {
     private final KnowledgeScheduleProperties scheduleProperties;
 
     private final String instanceId = resolveInstanceId();
+
+    /**
+     * 恢复长时间卡在 RUNNING 状态的文档（进程崩溃等异常场景）
+     * 超过配置阈值未完成的 RUNNING 文档重置为 FAILED，允许用户手动重试
+     */
+    @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
+    public void recoverStuckRunningDocuments() {
+        long timeoutMinutes = Math.max(scheduleProperties.getRunningTimeoutMinutes(), 10);
+        Date threshold = new Date(System.currentTimeMillis() - timeoutMinutes * 60 * 1000);
+        int recovered = documentMapper.update(
+                Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                        .set(KnowledgeDocumentDO::getStatus, DocumentStatus.FAILED.getCode())
+                        .set(KnowledgeDocumentDO::getUpdatedBy, SYSTEM_USER)
+                        .eq(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
+                        .lt(KnowledgeDocumentDO::getUpdateTime, threshold)
+        );
+        if (recovered > 0) {
+            log.warn("恢复了 {} 个卡在 RUNNING 状态超过 {} 分钟的文档，已重置为 FAILED", recovered, timeoutMinutes);
+        }
+    }
 
     @Scheduled(fixedDelayString = "${rag.knowledge.schedule.scan-delay-ms:10000}")
     public void scan() {
@@ -268,17 +286,17 @@ public class KnowledgeDocumentScheduleJob {
                                      Date startTime,
                                      Date nextRunTime,
                                      RemoteFileFetcher.RemoteFetchResult fetchResult) {
-        Date endTime = new Date();
-        KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
-        update.setId(schedule.getId());
-        update.setCronExpr(schedule.getCronExpr());
-        update.setLastRunTime(startTime);
-        update.setNextRunTime(nextRunTime);
-        update.setLastStatus(ScheduleRunStatus.SKIPPED.getCode());
-        update.setLastError(fetchResult.message());
-        update.setLastEtag(fetchResult.etag());
-        update.setLastModified(fetchResult.lastModified());
-        update.setLastContentHash(fetchResult.contentHash());
+        KnowledgeDocumentScheduleDO update = KnowledgeDocumentScheduleDO.builder()
+                .id(schedule.getId())
+                .cronExpr(schedule.getCronExpr())
+                .lastRunTime(startTime)
+                .nextRunTime(nextRunTime)
+                .lastStatus(ScheduleRunStatus.SKIPPED.getCode())
+                .lastError(fetchResult.message())
+                .lastEtag(fetchResult.etag())
+                .lastModified(fetchResult.lastModified())
+                .lastContentHash(fetchResult.contentHash())
+                .build();
         scheduleMapper.updateById(update);
 
         if (execId != null) {
@@ -286,7 +304,7 @@ public class KnowledgeDocumentScheduleJob {
             execUpdate.setId(execId);
             execUpdate.setStatus(ScheduleRunStatus.SKIPPED.getCode());
             execUpdate.setMessage(fetchResult.message());
-            execUpdate.setEndTime(endTime);
+            execUpdate.setEndTime(new Date());
             execUpdate.setContentHash(fetchResult.contentHash());
             execUpdate.setEtag(fetchResult.etag());
             execUpdate.setLastModified(fetchResult.lastModified());
@@ -299,22 +317,23 @@ public class KnowledgeDocumentScheduleJob {
                                      Date startTime,
                                      Date nextRunTime,
                                      String message) {
-        Date endTime = new Date();
-        KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
-        update.setId(schedule.getId());
-        update.setCronExpr(schedule.getCronExpr());
-        update.setLastRunTime(startTime);
-        update.setNextRunTime(nextRunTime);
-        update.setLastStatus(ScheduleRunStatus.SKIPPED.getCode());
-        update.setLastError(message);
+        KnowledgeDocumentScheduleDO update = KnowledgeDocumentScheduleDO.builder()
+                .id(schedule.getId())
+                .cronExpr(schedule.getCronExpr())
+                .lastRunTime(startTime)
+                .nextRunTime(nextRunTime)
+                .lastStatus(ScheduleRunStatus.SKIPPED.getCode())
+                .lastError(message)
+                .build();
         scheduleMapper.updateById(update);
 
         if (execId != null) {
-            KnowledgeDocumentScheduleExecDO execUpdate = new KnowledgeDocumentScheduleExecDO();
-            execUpdate.setId(execId);
-            execUpdate.setStatus(ScheduleRunStatus.SKIPPED.getCode());
-            execUpdate.setMessage(message);
-            execUpdate.setEndTime(endTime);
+            KnowledgeDocumentScheduleExecDO execUpdate = KnowledgeDocumentScheduleExecDO.builder()
+                    .id(execId)
+                    .status(ScheduleRunStatus.SKIPPED.getCode())
+                    .message(message)
+                    .endTime(new Date())
+                    .build();
             execMapper.updateById(execUpdate);
         }
     }
@@ -327,8 +346,7 @@ public class KnowledgeDocumentScheduleJob {
                                      StoredFileDTO stored) {
         Date endTime = new Date();
         scheduleMapper.update(
-                null,
-                new LambdaUpdateWrapper<KnowledgeDocumentScheduleDO>()
+                Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
                         .set(KnowledgeDocumentScheduleDO::getCronExpr, schedule.getCronExpr())
                         .set(KnowledgeDocumentScheduleDO::getLastRunTime, startTime)
                         .set(KnowledgeDocumentScheduleDO::getNextRunTime, nextRunTime)
@@ -342,16 +360,17 @@ public class KnowledgeDocumentScheduleJob {
         );
 
         if (execId != null) {
-            KnowledgeDocumentScheduleExecDO execUpdate = new KnowledgeDocumentScheduleExecDO();
-            execUpdate.setId(execId);
-            execUpdate.setStatus(ScheduleRunStatus.SUCCESS.getCode());
-            execUpdate.setMessage("刷新成功");
-            execUpdate.setEndTime(endTime);
-            execUpdate.setFileName(stored.getOriginalFilename());
-            execUpdate.setFileSize(stored.getSize());
-            execUpdate.setContentHash(fetchResult.contentHash());
-            execUpdate.setEtag(fetchResult.etag());
-            execUpdate.setLastModified(fetchResult.lastModified());
+            KnowledgeDocumentScheduleExecDO execUpdate = KnowledgeDocumentScheduleExecDO.builder()
+                    .id(execId)
+                    .status(ScheduleRunStatus.SUCCESS.getCode())
+                    .message("刷新成功")
+                    .endTime(endTime)
+                    .fileName(stored.getOriginalFilename())
+                    .fileSize(stored.getSize())
+                    .contentHash(fetchResult.contentHash())
+                    .etag(fetchResult.etag())
+                    .lastModified(fetchResult.lastModified())
+                    .build();
             execMapper.updateById(execUpdate);
         }
     }
@@ -361,14 +380,14 @@ public class KnowledgeDocumentScheduleJob {
                                     Date startTime,
                                     Date nextRunTime,
                                     String errorMessage) {
-        Date endTime = new Date();
-        KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
-        update.setId(schedule.getId());
-        update.setCronExpr(schedule.getCronExpr());
-        update.setLastRunTime(startTime);
-        update.setNextRunTime(nextRunTime);
-        update.setLastStatus(ScheduleRunStatus.FAILED.getCode());
-        update.setLastError(truncate(errorMessage));
+        KnowledgeDocumentScheduleDO update = KnowledgeDocumentScheduleDO.builder()
+                .id(schedule.getId())
+                .cronExpr(schedule.getCronExpr())
+                .lastRunTime(startTime)
+                .nextRunTime(nextRunTime)
+                .lastStatus(ScheduleRunStatus.FAILED.getCode())
+                .lastError(truncate(errorMessage))
+                .build();
         scheduleMapper.updateById(update);
 
         if (execId != null) {
@@ -376,15 +395,14 @@ public class KnowledgeDocumentScheduleJob {
             execUpdate.setId(execId);
             execUpdate.setStatus(ScheduleRunStatus.FAILED.getCode());
             execUpdate.setMessage(truncate(errorMessage));
-            execUpdate.setEndTime(endTime);
+            execUpdate.setEndTime(new Date());
             execMapper.updateById(execUpdate);
         }
     }
 
     private void disableSchedule(KnowledgeDocumentScheduleDO schedule, String reason) {
         scheduleMapper.update(
-                null,
-                new LambdaUpdateWrapper<KnowledgeDocumentScheduleDO>()
+                Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
                         .set(KnowledgeDocumentScheduleDO::getEnabled, 0)
                         .set(KnowledgeDocumentScheduleDO::getNextRunTime, null)
                         .set(KnowledgeDocumentScheduleDO::getLastStatus, ScheduleRunStatus.FAILED.getCode())
@@ -394,19 +412,20 @@ public class KnowledgeDocumentScheduleJob {
     }
 
     private boolean tryAcquireLock(String scheduleId, Date now, Date lockUntil) {
-        UpdateWrapper<KnowledgeDocumentScheduleDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", scheduleId)
-                .and(wrapper -> wrapper.isNull("lock_until").or().lt("lock_until", now));
-        KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
-        update.setLockOwner(instanceId);
-        update.setLockUntil(lockUntil);
-        return scheduleMapper.update(update, updateWrapper) > 0;
+        return scheduleMapper.update(
+                Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
+                        .set(KnowledgeDocumentScheduleDO::getLockOwner, instanceId)
+                        .set(KnowledgeDocumentScheduleDO::getLockUntil, lockUntil)
+                        .eq(KnowledgeDocumentScheduleDO::getId, scheduleId)
+                        .and(w -> w.isNull(KnowledgeDocumentScheduleDO::getLockUntil)
+                                .or()
+                                .lt(KnowledgeDocumentScheduleDO::getLockUntil, now))
+        ) > 0;
     }
 
     private void releaseLock(String scheduleId) {
         scheduleMapper.update(
-                null,
-                new LambdaUpdateWrapper<KnowledgeDocumentScheduleDO>()
+                Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
                         .set(KnowledgeDocumentScheduleDO::getLockOwner, null)
                         .set(KnowledgeDocumentScheduleDO::getLockUntil, null)
                         .eq(KnowledgeDocumentScheduleDO::getId, scheduleId)
@@ -419,43 +438,45 @@ public class KnowledgeDocumentScheduleJob {
             return;
         }
         Date lockUntil = new Date(System.currentTimeMillis() + Math.max(scheduleProperties.getLockSeconds(), 60) * 1000);
-        UpdateWrapper<KnowledgeDocumentScheduleDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", scheduleId).eq("lock_owner", instanceId);
-        KnowledgeDocumentScheduleDO update = new KnowledgeDocumentScheduleDO();
-        update.setLockUntil(lockUntil);
-        scheduleMapper.update(update, updateWrapper);
+        scheduleMapper.update(
+                Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
+                        .set(KnowledgeDocumentScheduleDO::getLockUntil, lockUntil)
+                        .eq(KnowledgeDocumentScheduleDO::getId, scheduleId)
+                        .eq(KnowledgeDocumentScheduleDO::getLockOwner, instanceId)
+        );
     }
 
     private boolean tryMarkDocumentRunning(String docId) {
-        UpdateWrapper<KnowledgeDocumentDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", docId)
-                .eq("deleted", 0)
-                .eq("enabled", 1)
-                .ne("status", DocumentStatus.RUNNING.getCode());
-        KnowledgeDocumentDO update = new KnowledgeDocumentDO();
-        update.setStatus(DocumentStatus.RUNNING.getCode());
-        update.setUpdatedBy(SYSTEM_USER);
-        return documentMapper.update(update, updateWrapper) > 0;
+        return documentMapper.update(
+                Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                        .set(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
+                        .set(KnowledgeDocumentDO::getUpdatedBy, SYSTEM_USER)
+                        .eq(KnowledgeDocumentDO::getId, docId)
+                        .eq(KnowledgeDocumentDO::getDeleted, 0)
+                        .eq(KnowledgeDocumentDO::getEnabled, 1)
+                        .ne(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
+        ) > 0;
     }
 
     private void markDocumentFailedIfRunning(String docId) {
-        UpdateWrapper<KnowledgeDocumentDO> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", docId)
-                .eq("status", DocumentStatus.RUNNING.getCode());
-        KnowledgeDocumentDO update = new KnowledgeDocumentDO();
-        update.setStatus(DocumentStatus.FAILED.getCode());
-        update.setUpdatedBy(SYSTEM_USER);
-        documentMapper.update(update, updateWrapper);
+        documentMapper.update(
+                Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                        .set(KnowledgeDocumentDO::getStatus, DocumentStatus.FAILED.getCode())
+                        .set(KnowledgeDocumentDO::getUpdatedBy, SYSTEM_USER)
+                        .eq(KnowledgeDocumentDO::getId, docId)
+                        .eq(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
+        );
     }
 
     private void applyRefreshedFileMetadata(String docId, StoredFileDTO stored) {
-        KnowledgeDocumentDO update = new KnowledgeDocumentDO();
-        update.setId(docId);
-        update.setDocName(stored.getOriginalFilename());
-        update.setFileUrl(stored.getUrl());
-        update.setFileType(stored.getDetectedType());
-        update.setFileSize(stored.getSize());
-        update.setUpdatedBy(SYSTEM_USER);
+        KnowledgeDocumentDO update = KnowledgeDocumentDO.builder()
+                .id(docId)
+                .docName(stored.getOriginalFilename())
+                .fileUrl(stored.getUrl())
+                .fileType(stored.getDetectedType())
+                .fileSize(stored.getSize())
+                .updatedBy(SYSTEM_USER)
+                .build();
         int updated = documentMapper.updateById(update);
         if (updated == 0) {
             throw new ClientException("文档不存在");
