@@ -226,7 +226,6 @@ public class ScheduleRefreshProcessor {
                 state.phase = Phase.FILE_SWITCHED;
 
                 markSuccessIfOwnedOrMarkLeaseLost(lease, state, fetchResult, "刷新成功写回调度状态");
-                return;
             }
         } catch (Exception e) {
             log.error("定时刷新失败: scheduleId={}, docId={}, kbId={}",
