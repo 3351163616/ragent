@@ -404,6 +404,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
 
+        // 禁止在文档分块运行时删除
+        if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
+            throw new ClientException("文档正在分块中，无法删除");
+        }
+
         knowledgeChunkService.deleteByDocId(docId);
         scheduleService.deleteByDocId(docId);
         chunkLogMapper.delete(Wrappers.lambdaQuery(KnowledgeDocumentChunkLogDO.class)
@@ -490,6 +495,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             if (StringUtils.hasText(newScheduleCron)) {
                 try {
                     CronScheduleHelper.nextRunTime(newScheduleCron, new Date());
+                    // 验证 cron 周期不能太短（与 upsertSchedule 保持一致）
+                    if (CronScheduleHelper.isIntervalLessThan(newScheduleCron, new Date(), 60)) {
+                        throw new ClientException("定时周期不能小于 60 秒");
+                    }
                 } catch (IllegalArgumentException e) {
                     throw new ClientException("定时表达式不合法: " + e.getMessage());
                 }
@@ -586,7 +595,19 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     public void enable(String docId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
-        documentDO.setEnabled(enabled ? 1 : 0);
+
+        // 禁止在文档分块运行时修改
+        if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
+            throw new ClientException("文档正在分块中，无法修改");
+        }
+
+        // 如果已经是目标状态，直接返回
+        int targetEnabled = enabled ? 1 : 0;
+        if (documentDO.getEnabled() != null && documentDO.getEnabled() == targetEnabled) {
+            return;
+        }
+
+        documentDO.setEnabled(targetEnabled);
         documentDO.setUpdatedBy(UserContext.getUsername());
         documentMapper.updateById(documentDO);
         scheduleService.syncScheduleIfExists(documentDO);
