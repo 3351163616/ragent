@@ -431,6 +431,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
 
+        // 禁止在文档分块运行时修改
+        if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
+            throw new ClientException("文档正在分块中，无法修改");
+        }
+
         String docName = requestParam == null ? null : requestParam.getDocName();
         if (!StringUtils.hasText(docName)) {
             throw new ClientException("文档名称不能为空");
@@ -467,7 +472,55 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
         }
 
+        // 处理定时调度相关字段（仅 URL 类型文档支持）
+        boolean scheduleChanged = false;
+        if (SourceType.URL.getValue().equalsIgnoreCase(documentDO.getSourceType())) {
+            String newSourceLocation = requestParam.getSourceLocation();
+            Integer newScheduleEnabled = requestParam.getScheduleEnabled();
+            String newScheduleCron = requestParam.getScheduleCron();
+
+            if (StringUtils.hasText(newSourceLocation)) {
+                updateWrapper.set(KnowledgeDocumentDO::getSourceLocation, newSourceLocation.trim());
+                scheduleChanged = true;
+            }
+            if (newScheduleEnabled != null) {
+                updateWrapper.set(KnowledgeDocumentDO::getScheduleEnabled, newScheduleEnabled);
+                scheduleChanged = true;
+            }
+            if (StringUtils.hasText(newScheduleCron)) {
+                try {
+                    CronScheduleHelper.nextRunTime(newScheduleCron, new Date());
+                } catch (IllegalArgumentException e) {
+                    throw new ClientException("定时表达式不合法: " + e.getMessage());
+                }
+                updateWrapper.set(KnowledgeDocumentDO::getScheduleCron, newScheduleCron.trim());
+                scheduleChanged = true;
+            }
+
+            // 验证：启用定时拉取时必须有 cron 和 sourceLocation
+            if (scheduleChanged) {
+                KnowledgeDocumentDO willBe = documentMapper.selectById(docId);
+                Integer finalEnabled = newScheduleEnabled != null ? newScheduleEnabled : willBe.getScheduleEnabled();
+                String finalCron = StringUtils.hasText(newScheduleCron) ? newScheduleCron.trim() : willBe.getScheduleCron();
+                String finalLocation = StringUtils.hasText(newSourceLocation) ? newSourceLocation.trim() : willBe.getSourceLocation();
+
+                if (finalEnabled != null && finalEnabled == 1) {
+                    if (!StringUtils.hasText(finalCron)) {
+                        throw new ClientException("启用定时拉取时必须设置定时表达式");
+                    }
+                    if (!StringUtils.hasText(finalLocation)) {
+                        throw new ClientException("启用定时拉取时必须设置来源地址");
+                    }
+                }
+            }
+        }
+
         documentMapper.update(updateWrapper);
+
+        if (scheduleChanged) {
+            KnowledgeDocumentDO updated = documentMapper.selectById(docId);
+            scheduleService.upsertSchedule(updated);
+        }
     }
 
     @Override

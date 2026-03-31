@@ -245,6 +245,9 @@ export const updateDocument = async (docId: string, data: {
   chunkStrategy?: string;
   chunkConfig?: string;
   pipelineId?: string;
+  sourceLocation?: string;
+  scheduleEnabled?: number;
+  scheduleCron?: string;
 }): Promise<void> => {
   await api.put(`/knowledge-base/docs/${docId}`, data);
 };
