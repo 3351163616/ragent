@@ -18,13 +18,13 @@
 package com.nageoffer.ai.ragent.knowledge.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.nageoffer.ai.ragent.framework.convention.Result;
+import com.nageoffer.ai.ragent.framework.web.Results;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkBatchRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkCreateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkPageRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeChunkUpdateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeChunkVO;
-import com.nageoffer.ai.ragent.framework.convention.Result;
-import com.nageoffer.ai.ragent.framework.web.Results;
 import com.nageoffer.ai.ragent.knowledge.service.KnowledgeChunkService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -99,31 +99,13 @@ public class KnowledgeChunkController {
     }
 
     /**
-     * 批量启用 Chunk
+     * 批量启用或禁用 Chunk
      */
-    @PostMapping("/knowledge-base/docs/{doc-id}/chunks/batch-enable")
+    @PatchMapping("/knowledge-base/docs/{doc-id}/chunks/batch-enable")
     public Result<Void> batchEnable(@PathVariable("doc-id") String docId,
+                                    @RequestParam("value") boolean enabled,
                                     @RequestBody(required = false) KnowledgeChunkBatchRequest request) {
-        knowledgeChunkService.batchEnable(docId, request);
-        return Results.success();
-    }
-
-    /**
-     * 批量禁用 Chunk
-     */
-    @PostMapping("/knowledge-base/docs/{doc-id}/chunks/batch-disable")
-    public Result<Void> batchDisable(@PathVariable("doc-id") String docId,
-                                     @RequestBody(required = false) KnowledgeChunkBatchRequest request) {
-        knowledgeChunkService.batchDisable(docId, request);
-        return Results.success();
-    }
-
-    /**
-     * 重建文档向量（以数据库 enabled=1 的 chunk 为准）
-     */
-    @PostMapping("/knowledge-base/docs/{doc-id}/chunks/rebuild")
-    public Result<Void> rebuild(@PathVariable("doc-id") String docId) {
-        knowledgeChunkService.rebuildByDocId(docId);
+        knowledgeChunkService.batchToggleEnabled(docId, request, enabled);
         return Results.success();
     }
 }

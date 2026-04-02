@@ -53,9 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.util.StringUtils;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import cn.hutool.crypto.SecureUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -77,13 +75,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private final TransactionOperations transactionOperations;
 
     @Override
-    public Boolean existsByDocId(String docId) {
-        return chunkMapper.selectCount(
-                Wrappers.lambdaQuery(KnowledgeChunkDO.class).eq(KnowledgeChunkDO::getDocId, docId)
-        ) > 0;
-    }
-
-    @Override
     public IPage<KnowledgeChunkVO> pageQuery(String docId, KnowledgeChunkPageRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
@@ -95,7 +86,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         Page<KnowledgeChunkDO> page = new Page<>(requestParam.getCurrent(), requestParam.getSize());
         IPage<KnowledgeChunkDO> result = chunkMapper.selectPage(page, queryWrapper);
-        fillTokenCountsIfMissing(result.getRecords());
         return result.convert(each -> BeanUtil.toBean(each, KnowledgeChunkVO.class));
     }
 
@@ -114,18 +104,17 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         String content = requestParam.getContent();
         Assert.notBlank(content, () -> new ClientException("Chunk 内容不能为空"));
 
-        Integer chunkIndex = requestParam.getIndex();
-        if (chunkIndex == null) {
-            KnowledgeChunkDO latest = chunkMapper.selectOne(
-                    new LambdaQueryWrapper<KnowledgeChunkDO>()
-                            .eq(KnowledgeChunkDO::getDocId, docId)
-                            .orderByDesc(KnowledgeChunkDO::getChunkIndex)
-                            .last("LIMIT 1")
-            );
-            chunkIndex = latest != null ? latest.getChunkIndex() + 1 : 0;
-        }
+        KnowledgeChunkDO latest = chunkMapper.selectOne(
+                Wrappers.lambdaQuery(KnowledgeChunkDO.class)
+                        .eq(KnowledgeChunkDO::getDocId, docId)
+                        .orderByDesc(KnowledgeChunkDO::getChunkIndex)
+                        .last("LIMIT 1")
+        );
+        int chunkIndex = requestParam.getIndex() != null
+                ? requestParam.getIndex()
+                : (latest != null ? latest.getChunkIndex() + 1 : 0);
 
-        String contentHash = calculateHash(content);
+        String contentHash = SecureUtil.sha256(content);
         int charCount = content.length();
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String embeddingModel = kbDO.getEmbeddingModel();
@@ -143,6 +132,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .tokenCount(tokenCount)
                 .enabled(1)
                 .createdBy(UserContext.getUsername())
+                .updatedBy(UserContext.getUsername())
                 .build();
 
         chunkMapper.insert(chunkDO);
@@ -213,17 +203,22 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                     .docId(docId)
                     .chunkIndex(chunkIndex)
                     .content(content)
-                    .contentHash(calculateHash(content))
+                    .contentHash(SecureUtil.sha256(content))
                     .charCount(content.length())
                     .tokenCount(resolveTokenCount(content))
                     .enabled(1)
                     .createdBy(username)
+                    .updatedBy(username)
                     .build();
             chunkDOList.add(chunkDO);
         }
 
         // 批量写入数据库，向量索引由上层统一处理以避免重复计算
         chunkMapper.insert(chunkDOList);
+
+        documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                .eq(KnowledgeDocumentDO::getId, docId)
+                .setSql("chunk_count = chunk_count + " + chunkDOList.size()));
 
         if (writeVector) {
             List<VectorChunk> vectorChunks = chunkDOList.stream()
@@ -261,7 +256,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
 
         chunkDO.setContent(newContent);
-        chunkDO.setContentHash(calculateHash(newContent));
+        chunkDO.setContentHash(SecureUtil.sha256(newContent));
         chunkDO.setCharCount(newContent.length());
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String embeddingModel = kbDO.getEmbeddingModel();
@@ -299,13 +294,16 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在"));
         Assert.isTrue(chunkDO.getDocId().equals(docId), () -> new ClientException("Chunk 不属于该文档"));
 
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        Assert.notNull(kbDO, () -> new ServiceException("知识库不存在"));
+        String collectionName = kbDO.getCollectionName();
+
         chunkMapper.deleteById(chunkId);
 
         documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
                 .eq(KnowledgeDocumentDO::getId, docId)
                 .setSql("chunk_count = CASE WHEN chunk_count > 0 THEN chunk_count - 1 ELSE 0 END"));
 
-        String collectionName = resolveCollectionName(documentDO.getKbId());
         log.info("删除 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
 
         deleteChunkFromVector(collectionName, chunkId);
@@ -348,56 +346,85 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     @Override
-    public void batchEnable(String docId, KnowledgeChunkBatchRequest requestParam) {
-        batchUpdateEnabled(docId, requestParam, true);
-    }
+    public void batchToggleEnabled(String docId, KnowledgeChunkBatchRequest requestParam, boolean enabled) {
+        if (requestParam == null || CollUtil.isEmpty(requestParam.getChunkIds())) {
+            throw new ClientException("请指定需要操作的 Chunk，全量启用/禁用请使用文档启用接口");
+        }
+        List<String> requestedIds = requestParam.getChunkIds();
+        if (requestedIds.size() > 500) {
+            throw new ClientException("单次批量操作 Chunk 数量不能超过 500");
+        }
 
-    @Override
-    public void batchDisable(String docId, KnowledgeChunkBatchRequest requestParam) {
-        batchUpdateEnabled(docId, requestParam, false);
-    }
-
-    @Override
-    public void rebuildByDocId(String docId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
+            throw new ClientException("文档正在分块处理中，暂不支持批量修改 Chunk 状态");
+        }
+        validateDocumentEnabledForChunkEnable(documentDO, enabled);
 
-        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-        String collectionName = kbDO.getCollectionName();
-        String embeddingModel = kbDO.getEmbeddingModel();
-        log.info("开始重建文档向量, kbId={}, docId={}", documentDO.getKbId(), docId);
+        List<KnowledgeChunkDO> found = chunkMapper.selectByIds(requestedIds);
+        if (found.size() != requestedIds.size()) {
+            throw new ClientException("存在无效的 Chunk ID，请求 " + requestedIds.size() + " 个，实际找到 " + found.size() + " 个");
+        }
+        found.forEach(c -> {
+            if (!c.getDocId().equals(docId)) {
+                throw new ClientException("Chunk " + c.getId() + " 不属于文档 " + docId);
+            }
+        });
+        List<String> targetIds = found.stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
 
-        // 1. 读取 enabled=1 的 chunks
-        List<KnowledgeChunkDO> enabledChunks = chunkMapper.selectList(
-                new LambdaQueryWrapper<KnowledgeChunkDO>()
-                        .eq(KnowledgeChunkDO::getDocId, docId)
-                        .eq(KnowledgeChunkDO::getEnabled, 1)
-                        .orderByAsc(KnowledgeChunkDO::getChunkIndex)
-        );
-
-        if (enabledChunks.isEmpty()) {
-            log.warn("文档下没有启用的 Chunk，跳过向量重建, kbId={}, docId={}", documentDO.getKbId(), docId);
+        if (CollUtil.isEmpty(targetIds)) {
             return;
         }
 
-        // 2. 事务外调用 embedding（耗时外部接口，避免长事务占用连接）
-        List<VectorChunk> chunks = enabledChunks.stream()
-                .map(each -> VectorChunk.builder()
-                        .content(each.getContent())
-                        .index(each.getChunkIndex())
-                        .chunkId(each.getId())
-                        .build())
-                .collect(Collectors.toList());
+        int enabledValue = enabled ? 1 : 0;
+        List<KnowledgeChunkDO> needUpdateChunks = chunkMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeChunkDO>()
+                        .in(KnowledgeChunkDO::getId, targetIds)
+                        .ne(KnowledgeChunkDO::getEnabled, enabledValue)
+        );
+        List<String> needUpdateIds = needUpdateChunks.stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
 
-        attachEmbeddings(chunks, embeddingModel);
+        if (CollUtil.isEmpty(needUpdateIds)) {
+            throw new ClientException(enabled ? "所有 Chunk 已全部启用，无需重复操作" : "所有 Chunk 已全部禁用，无需重复操作");
+        }
 
-        // 3. 编程式事务：删旧向量 + 写新向量保持原子性
-        transactionOperations.executeWithoutResult(status -> {
-            vectorStoreService.deleteDocumentVectors(collectionName, docId);
-            vectorStoreService.indexDocumentChunks(collectionName, docId, chunks);
-        });
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String collectionName = kbDO.getCollectionName();
 
-        log.info("重建文档向量成功, kbId={}, docId={}, chunkCount={}", documentDO.getKbId(), docId, enabledChunks.size());
+        if (enabled) {
+            List<VectorChunk> vectorChunks = needUpdateChunks.stream()
+                    .map(c -> VectorChunk.builder()
+                            .chunkId(c.getId())
+                            .content(c.getContent())
+                            .index(c.getChunkIndex())
+                            .build())
+                    .collect(Collectors.toList());
+            attachEmbeddings(vectorChunks, kbDO.getEmbeddingModel());
+
+            transactionOperations.executeWithoutResult(status -> {
+                chunkMapper.update(
+                        Wrappers.lambdaUpdate(KnowledgeChunkDO.class)
+                                .in(KnowledgeChunkDO::getId, needUpdateIds)
+                                .set(KnowledgeChunkDO::getEnabled, 1)
+                                .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
+                );
+                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
+            });
+        } else {
+            transactionOperations.executeWithoutResult(status -> {
+                chunkMapper.update(
+                        Wrappers.lambdaUpdate(KnowledgeChunkDO.class)
+                                .in(KnowledgeChunkDO::getId, needUpdateIds)
+                                .set(KnowledgeChunkDO::getEnabled, 0)
+                                .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
+                );
+                vectorStoreService.deleteChunksByIds(collectionName, needUpdateIds);
+            });
+        }
+
+        log.info("批量{}Chunk 成功, kbId={}, docId={}, count={}", enabled ? "启用" : "禁用",
+                documentDO.getKbId(), docId, needUpdateIds.size());
     }
 
     @Override
@@ -411,14 +438,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                         .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
         );
         log.info("根据文档ID更新所有Chunk启用状态, kbId={}, docId={}, enabled={}", kbId, docId, enabled);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void updateEnabledByDocId(String docId, boolean enabled) {
-        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
-        updateEnabledByDocId(docId, String.valueOf(documentDO.getKbId()), enabled);
     }
 
     @Override
@@ -447,106 +466,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     // ==================== 私有方法 ====================
-
-    /**
-     * 批量更新启用状态
-     */
-    private void batchUpdateEnabled(String docId, KnowledgeChunkBatchRequest requestParam, boolean enabled) {
-        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
-        if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
-            throw new ClientException("文档正在分块处理中，暂不支持批量修改 Chunk 状态");
-        }
-        validateDocumentEnabledForChunkEnable(documentDO, enabled);
-
-        boolean isAll = requestParam == null || CollUtil.isEmpty(requestParam.getChunkIds());
-        List<String> targetIds;
-
-        if (isAll) {
-            targetIds = chunkMapper.selectList(
-                    new LambdaQueryWrapper<KnowledgeChunkDO>()
-                            .eq(KnowledgeChunkDO::getDocId, docId)
-                            .select(KnowledgeChunkDO::getId)
-            ).stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
-        } else {
-            List<String> requestedIds = requestParam.getChunkIds();
-            if (requestedIds.size() > 500) {
-                throw new ClientException("单次批量操作 Chunk 数量不能超过 500");
-            }
-            List<KnowledgeChunkDO> found = chunkMapper.selectByIds(requestedIds);
-            found.forEach(c -> {
-                if (!c.getDocId().equals(docId)) {
-                    throw new ClientException("Chunk " + c.getId() + " 不属于文档 " + docId);
-                }
-            });
-            targetIds = found.stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
-        }
-
-        if (CollUtil.isEmpty(targetIds)) {
-            return;
-        }
-
-        int enabledValue = enabled ? 1 : 0;
-        List<String> needUpdateIds = chunkMapper.selectList(
-                new LambdaQueryWrapper<KnowledgeChunkDO>()
-                        .in(KnowledgeChunkDO::getId, targetIds)
-                        .ne(KnowledgeChunkDO::getEnabled, enabledValue)
-                        .select(KnowledgeChunkDO::getId)
-        ).stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
-
-        if (CollUtil.isEmpty(needUpdateIds)) {
-            return;
-        }
-
-        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-        String collectionName = kbDO.getCollectionName();
-
-        if (enabled) {
-            List<KnowledgeChunkDO> alreadyEnabled = chunkMapper.selectList(
-                    new LambdaQueryWrapper<KnowledgeChunkDO>()
-                            .eq(KnowledgeChunkDO::getDocId, docId)
-                            .eq(KnowledgeChunkDO::getEnabled, 1)
-                            .notIn(KnowledgeChunkDO::getId, needUpdateIds)
-            );
-            List<KnowledgeChunkDO> toEnable = chunkMapper.selectByIds(needUpdateIds);
-            List<KnowledgeChunkDO> merged = new ArrayList<>(alreadyEnabled.size() + toEnable.size());
-            merged.addAll(alreadyEnabled);
-            merged.addAll(toEnable);
-
-            List<VectorChunk> vectorChunks = merged.stream()
-                    .map(c -> VectorChunk.builder()
-                            .chunkId(c.getId())
-                            .content(c.getContent())
-                            .index(c.getChunkIndex())
-                            .build())
-                    .collect(Collectors.toList());
-            attachEmbeddings(vectorChunks, kbDO.getEmbeddingModel());
-
-            transactionOperations.executeWithoutResult(status -> {
-                chunkMapper.update(
-                        Wrappers.lambdaUpdate(KnowledgeChunkDO.class)
-                                .in(KnowledgeChunkDO::getId, needUpdateIds)
-                                .set(KnowledgeChunkDO::getEnabled, 1)
-                                .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
-                );
-                vectorStoreService.deleteDocumentVectors(collectionName, docId);
-                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
-            });
-        } else {
-            transactionOperations.executeWithoutResult(status -> {
-                chunkMapper.update(
-                        Wrappers.lambdaUpdate(KnowledgeChunkDO.class)
-                                .in(KnowledgeChunkDO::getId, needUpdateIds)
-                                .set(KnowledgeChunkDO::getEnabled, 0)
-                                .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
-                );
-                vectorStoreService.deleteChunksByIds(collectionName, needUpdateIds);
-            });
-        }
-
-        log.info("批量{}Chunk 成功, kbId={}, docId={}, count={}", enabled ? "启用" : "禁用",
-                documentDO.getKbId(), docId, needUpdateIds.size());
-    }
 
     /**
      * 启用 chunk 前必须保证所属文档为启用状态
@@ -584,29 +503,6 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private void deleteChunkFromVector(String collectionName, String chunkId) {
         vectorStoreService.deleteChunkById(collectionName, chunkId);
         log.debug("从向量库删除 Chunk, collectionName={}, chunkId={}", collectionName, chunkId);
-    }
-
-    private String resolveCollectionName(String kbId) {
-        return knowledgeBaseMapper.selectById(kbId).getCollectionName();
-    }
-
-    /**
-     * 计算内容哈希（SHA-256）
-     */
-    private String calculateHash(String content) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 算法不可用", e);
-        }
     }
 
     /**
@@ -651,25 +547,5 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             return 0;
         }
         return tokenCounterService.countTokens(content);
-    }
-
-    private void fillTokenCountsIfMissing(List<KnowledgeChunkDO> chunks) {
-        if (CollUtil.isEmpty(chunks)) {
-            return;
-        }
-        for (KnowledgeChunkDO chunk : chunks) {
-            if (chunk.getTokenCount() != null) {
-                continue;
-            }
-            Integer tokenCount = resolveTokenCount(chunk.getContent());
-            if (tokenCount == null) {
-                continue;
-            }
-            chunk.setTokenCount(tokenCount);
-            KnowledgeChunkDO update = new KnowledgeChunkDO();
-            update.setId(chunk.getId());
-            update.setTokenCount(tokenCount);
-            chunkMapper.updateById(update);
-        }
     }
 }
