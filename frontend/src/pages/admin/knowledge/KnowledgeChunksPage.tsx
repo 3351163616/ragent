@@ -19,8 +19,7 @@ import {
   batchEnableChunks,
   createChunk,
   deleteChunk,
-  disableChunk,
-  enableChunk,
+  toggleChunk,
   getChunksPage,
   getDocument,
   rebuildChunks,
@@ -212,13 +211,9 @@ export function KnowledgeChunksPage() {
   const handleToggleEnabled = async (chunk: KnowledgeChunk) => {
     if (!docId) return;
     try {
-      if (chunk.enabled === 1) {
-        await disableChunk(docId, String(chunk.id));
-        toast.success("已禁用");
-      } else {
-        await enableChunk(docId, String(chunk.id));
-        toast.success("已启用");
-      }
+      const enable = chunk.enabled !== 1;
+      await toggleChunk(docId, String(chunk.id), enable);
+      toast.success(enable ? "已启用" : "已禁用");
       await loadChunks(pageNo, enabledFilter);
     } catch (error) {
       toast.error(getErrorMessage(error, "操作失败"));

@@ -128,6 +128,15 @@ public interface KnowledgeChunkService {
      * 根据文档 ID 批量更新所有分片的启用状态
      *
      * @param docId   文档 ID
+     * @param kbId    知识库 ID（用于日志，避免重复查询）
+     * @param enabled 是否启用
+     */
+    void updateEnabledByDocId(String docId, String kbId, boolean enabled);
+
+    /**
+     * 根据文档 ID 批量更新所有分片的启用状态
+     *
+     * @param docId   文档 ID
      * @param enabled 是否启用
      */
     void updateEnabledByDocId(String docId, boolean enabled);

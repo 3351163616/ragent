@@ -30,10 +30,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -86,22 +88,13 @@ public class KnowledgeChunkController {
     }
 
     /**
-     * 启用单条 Chunk
+     * 启用或禁用单条 Chunk
      */
-    @PostMapping("/knowledge-base/docs/{doc-id}/chunks/{chunk-id}/enable")
+    @PatchMapping("/knowledge-base/docs/{doc-id}/chunks/{chunk-id}/enable")
     public Result<Void> enable(@PathVariable("doc-id") String docId,
-                               @PathVariable("chunk-id") String chunkId) {
-        knowledgeChunkService.enableChunk(docId, chunkId, true);
-        return Results.success();
-    }
-
-    /**
-     * 禁用单条 Chunk
-     */
-    @PostMapping("/knowledge-base/docs/{doc-id}/chunks/{chunk-id}/disable")
-    public Result<Void> disable(@PathVariable("doc-id") String docId,
-                                @PathVariable("chunk-id") String chunkId) {
-        knowledgeChunkService.enableChunk(docId, chunkId, false);
+                               @PathVariable("chunk-id") String chunkId,
+                               @RequestParam("value") boolean enabled) {
+        knowledgeChunkService.enableChunk(docId, chunkId, enabled);
         return Results.success();
     }
 

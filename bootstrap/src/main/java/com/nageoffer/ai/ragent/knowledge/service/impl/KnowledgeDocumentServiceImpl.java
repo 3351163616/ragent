@@ -77,10 +77,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -112,7 +110,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final IngestionEngine ingestionEngine;
     private final ChunkEmbeddingService chunkEmbeddingService;
     private final KnowledgeDocumentChunkLogMapper chunkLogMapper;
-    private final PlatformTransactionManager transactionManager;
+    private final TransactionOperations transactionOperations;
     private final MessageQueueProducer messageQueueProducer;
     private final KnowledgeScheduleProperties scheduleProperties;
     private final RemoteFileFetcher remoteFileFetcher;
@@ -259,7 +257,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     return req;
                 })
                 .toList();
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+        transactionOperations.executeWithoutResult(status -> {
             knowledgeChunkService.deleteByDocId(docId);
             knowledgeChunkService.batchCreate(docId, chunks);
             vectorStoreService.deleteDocumentVectors(collectionName, docId);
@@ -387,9 +385,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     private void markChunkFailed(String docId) {
-        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
-        txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        txTemplate.executeWithoutResult(status -> {
+        transactionOperations.executeWithoutResult(status -> {
             KnowledgeDocumentDO update = new KnowledgeDocumentDO();
             update.setId(docId);
             update.setStatus(DocumentStatus.FAILED.getCode());
@@ -591,7 +587,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void enable(String docId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
@@ -607,36 +602,42 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        documentDO.setEnabled(targetEnabled);
-        documentDO.setUpdatedBy(UserContext.getUsername());
-        documentMapper.updateById(documentDO);
-        scheduleService.syncScheduleIfExists(documentDO);
+        // 提前查知识库，两个分支都需要，避免重复查询
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String collectionName = kbDO.getCollectionName();
 
-        // 同步更新 Chunk 表的状态
-        knowledgeChunkService.updateEnabledByDocId(docId, enabled);
-
-        if (!enabled) {
-            // 禁用文档时，从向量库中删除对应的向量
-            String collectionName = resolveCollectionName(documentDO.getKbId());
-            vectorStoreService.deleteDocumentVectors(collectionName, docId);
-        } else {
-            // 启用文档时，根据文档分块记录重建向量索引
-            KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-            String collectionName = kbDO.getCollectionName();
-            String embeddingModel = kbDO.getEmbeddingModel();
+        // 启用时：embed 耗时较长，在事务外提前执行，避免长事务占用连接
+        List<VectorChunk> vectorChunks = null;
+        if (enabled) {
             List<KnowledgeChunkVO> chunks = knowledgeChunkService.listByDocId(docId);
-            List<VectorChunk> vectorChunks = chunks.stream().map(each ->
+            vectorChunks = chunks.stream().map(each ->
                     VectorChunk.builder()
                             .chunkId(each.getId())
                             .content(each.getContent())
                             .index(each.getChunkIndex())
                             .build()
             ).toList();
-            if (CollUtil.isNotEmpty(vectorChunks)) {
-                chunkEmbeddingService.embed(vectorChunks, embeddingModel);
-                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
+            if (CollUtil.isEmpty(vectorChunks)) {
+                log.warn("启用文档时未找到任何 Chunk，跳过向量重建，docId={}", docId);
+                return;
             }
+            chunkEmbeddingService.embed(vectorChunks, kbDO.getEmbeddingModel());
         }
+
+        final List<VectorChunk> finalVectorChunks = vectorChunks;
+        transactionOperations.executeWithoutResult(status -> {
+            documentDO.setEnabled(targetEnabled);
+            documentDO.setUpdatedBy(UserContext.getUsername());
+            documentMapper.updateById(documentDO);
+            scheduleService.syncScheduleIfExists(documentDO);
+            knowledgeChunkService.updateEnabledByDocId(docId, String.valueOf(kbDO.getId()), enabled);
+
+            if (!enabled) {
+                vectorStoreService.deleteDocumentVectors(collectionName, docId);
+            } else {
+                vectorStoreService.indexDocumentChunks(collectionName, docId, finalVectorChunks);
+            }
+        });
     }
 
     @Override
