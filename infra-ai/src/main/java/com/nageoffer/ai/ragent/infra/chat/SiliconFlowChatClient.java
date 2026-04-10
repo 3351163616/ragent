@@ -184,6 +184,8 @@ public class SiliconFlowChatClient implements ChatClient {
         }
         if (request.getThinking() != null && request.getThinking()) {
             reqBody.addProperty("enable_thinking", true);
+        } else {
+            reqBody.addProperty("enable_thinking", false);
         }
         return reqBody;
     }
