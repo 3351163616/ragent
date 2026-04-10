@@ -187,6 +187,8 @@ public class BaiLianChatClient implements ChatClient {
         }
         if (stream && request.getThinking() != null && request.getThinking()) {
             reqBody.addProperty("enable_thinking", true);
+        } else {
+            reqBody.addProperty("enable_thinking", false);
         }
         return reqBody;
     }
