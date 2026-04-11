@@ -30,8 +30,8 @@ import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -123,7 +123,20 @@ public class RoutingLLMService implements LLMService {
     public String chat(ChatRequest request) {
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
-                selector.selectChatCandidates(request.getThinking()),
+                selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking())),
+                target -> clientsByProvider.get(target.candidate().getProvider()),
+                (client, target) -> client.chat(request, target)
+        );
+    }
+
+    @Override
+    public String chat(ChatRequest request, String modelId) {
+        if (!StringUtils.hasText(modelId)) {
+            return chat(request);
+        }
+        return executor.executeWithFallback(
+                ModelCapability.CHAT,
+                List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking()))),
                 target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.chat(request, target)
         );
@@ -158,7 +171,7 @@ public class RoutingLLMService implements LLMService {
     @RagTraceNode(name = "llm-stream-routing", type = "LLM_ROUTING")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
         // 获取按优先级排序的候选模型列表
-        List<ModelTarget> targets = selector.selectChatCandidates(request.getThinking());
+        List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
         if (CollUtil.isEmpty(targets)) {
             throw new RemoteException(STREAM_NO_PROVIDER_MESSAGE);
         }
@@ -171,6 +184,9 @@ public class RoutingLLMService implements LLMService {
             // 解析该候选对应的 ChatClient 实现
             ChatClient client = resolveClient(target, label);
             if (client == null) {
+                continue;
+            }
+            if (!healthStore.allowCall(target.id())) {
                 continue;
             }
 
@@ -330,165 +346,10 @@ public class RoutingLLMService implements LLMService {
         return finalException;
     }
 
-    /**
-     * 流式首包探测缓冲回调 —— 装饰器模式
-     * <p>
-     * 设计目的：在流式请求的探测阶段，将所有回调事件（onContent/onThinking/onComplete/onError）
-     * 缓存在内存列表中，避免失败模型的部分输出泄露到下游（如 SSE 推送给前端）。
-     * <p>
-     * 工作机制：
-     * <ul>
-     *     <li><b>探测阶段（committed=false）</b>：所有事件存入 {@code bufferedEvents}，
-     *         同时通过 {@link FirstPacketAwaiter} 标记首包状态</li>
-     *     <li><b>提交后（committed=true）</b>：
-     *         <ol>
-     *             <li>{@link #commit()} 方法原子切换 committed 标记</li>
-     *             <li>按顺序回放缓冲区中的所有事件到下游回调</li>
-     *             <li>后续新事件直接透传，不再缓冲</li>
-     *         </ol>
-     *     </li>
-     * </ul>
-     * <p>
-     * 线程安全：通过 synchronized(lock) 保护 committed 标记与缓冲列表的原子性操作
-     */
-    private static final class ProbeBufferingCallback implements StreamCallback {
-
-        /** 下游真实回调（通常是 StreamChatEventHandler） */
-        private final StreamCallback downstream;
-        /** 首包等待器，用于通知路由层首包已到达或发生错误 */
-        private final FirstPacketAwaiter awaiter;
-        /** 同步锁，保护 committed 标记和 bufferedEvents 的原子操作 */
-        private final Object lock = new Object();
-        /** 探测阶段缓冲的事件列表，commit 后清空 */
-        private final List<BufferedEvent> bufferedEvents = new ArrayList<>();
-        /** 是否已提交：false=探测阶段（缓冲），true=已确认（透传） */
-        private volatile boolean committed;
-
-        private ProbeBufferingCallback(StreamCallback downstream, FirstPacketAwaiter awaiter) {
-            this.downstream = downstream;
-            this.awaiter = awaiter;
-            this.committed = false;
-        }
-
-        /** 收到文本内容片段：标记首包到达，缓冲或透传 */
-        @Override
-        public void onContent(String content) {
-            awaiter.markContent();
-            bufferOrDispatch(BufferedEvent.content(content));
-        }
-
-        /** 收到思考内容片段：同样视为有效首包 */
-        @Override
-        public void onThinking(String content) {
-            awaiter.markContent();
-            bufferOrDispatch(BufferedEvent.thinking(content));
-        }
-
-        /** 流式请求正常完成：标记完成状态 */
-        @Override
-        public void onComplete() {
-            awaiter.markComplete();
-            bufferOrDispatch(BufferedEvent.complete());
-        }
-
-        /** 流式请求出错：标记错误状态，触发路由层切换下一个候选 */
-        @Override
-        public void onError(Throwable t) {
-            awaiter.markError(t);
-            bufferOrDispatch(BufferedEvent.error(t));
-        }
-
-        /**
-         * 首包探测成功后提交：
-         * 1. 原子切换为 committed
-         * 2. 按事件顺序回放缓存，保证时序一致
-         */
-        private void commit() {
-            List<BufferedEvent> snapshot;
-            synchronized (lock) {
-                if (committed) {
-                    return;
-                }
-                committed = true;
-                if (bufferedEvents.isEmpty()) {
-                    return;
-                }
-                snapshot = new ArrayList<>(bufferedEvents);
-                bufferedEvents.clear();
-            }
-            for (BufferedEvent event : snapshot) {
-                dispatch(event);
-            }
-        }
-
-        /**
-         * 根据当前状态决定缓冲还是直接分发事件
-         * <p>
-         * 在 synchronized 块内检查 committed 标记，保证"检查 + 缓冲"的原子性，
-         * 避免 commit 和 bufferOrDispatch 之间的竞态条件导致事件丢失或重复
-         *
-         * @param event 待处理的缓冲事件
-         */
-        private void bufferOrDispatch(BufferedEvent event) {
-            boolean dispatchNow;
-            synchronized (lock) {
-                dispatchNow = committed;
-                if (!dispatchNow) {
-                    bufferedEvents.add(event);
-                }
-            }
-            if (dispatchNow) {
-                dispatch(event);
-            }
-        }
-
-        /**
-         * 将缓冲事件按类型分发到下游真实回调
-         *
-         * @param event 缓冲事件
-         */
-        private void dispatch(BufferedEvent event) {
-            switch (event.type()) {
-                case CONTENT -> downstream.onContent(event.content());
-                case THINKING -> downstream.onThinking(event.content());
-                case COMPLETE -> downstream.onComplete();
-                case ERROR -> downstream.onError(event.error() != null
-                        ? event.error()
-                        : new RemoteException("流式请求失败", BaseErrorCode.REMOTE_ERROR));
-            }
-        }
-
-        /**
-         * 缓冲事件记录 —— 不可变数据载体
-         * <p>
-         * 使用 record 类型保证不可变性，包含事件类型、文本内容和异常信息三个字段。
-         * 通过静态工厂方法创建不同类型的事件实例。
-         */
-        private record BufferedEvent(EventType type, String content, Throwable error) {
-
-            private static BufferedEvent content(String content) {
-                return new BufferedEvent(EventType.CONTENT, content, null);
-            }
-
-            private static BufferedEvent thinking(String content) {
-                return new BufferedEvent(EventType.THINKING, content, null);
-            }
-
-            private static BufferedEvent complete() {
-                return new BufferedEvent(EventType.COMPLETE, null, null);
-            }
-
-            private static BufferedEvent error(Throwable error) {
-                return new BufferedEvent(EventType.ERROR, null, error);
-            }
-        }
-
-        /** 缓冲事件类型枚举 */
-        private enum EventType {
-            CONTENT,
-            THINKING,
-            COMPLETE,
-            ERROR
-        }
+    private ModelTarget resolveTarget(String modelId, boolean deepThinking) {
+        return selector.selectChatCandidates(deepThinking).stream()
+                .filter(target -> modelId.equals(target.id()))
+                .findFirst()
+                .orElseThrow(() -> new RemoteException("Chat 模型不可用: " + modelId));
     }
 }

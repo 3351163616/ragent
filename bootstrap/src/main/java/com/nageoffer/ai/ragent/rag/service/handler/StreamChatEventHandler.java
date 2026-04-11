@@ -30,7 +30,6 @@ import com.nageoffer.ai.ragent.infra.chat.StreamCallback;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Optional;
 
@@ -86,6 +85,9 @@ public class StreamChatEventHandler implements StreamCallback {
     private final boolean sendTitleOnComplete;
     /** 累积 LLM 输出的完整回复内容，用于最终持久化 */
     private final StringBuilder answer = new StringBuilder();
+    private final StringBuilder thinking = new StringBuilder();
+    private long thinkingStartMs;
+    private int thinkingDurationSeconds;
 
     /**
      * 使用参数对象构造（推荐）
@@ -176,7 +178,9 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         // 即使被取消，若已累积部分回复，也要持久化，避免用户看到的内容与数据库不一致
         if (StrUtil.isNotBlank(content)) {
-            messageId = memoryService.append(conversationId, userId, ChatMessage.assistant(content));
+            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+            ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration());
+            messageId = memoryService.append(conversationId, userId, message);
         }
         String title = resolveTitleForEvent();
         return new CompletionPayload(String.valueOf(messageId), title);
@@ -200,6 +204,9 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isBlank(chunk)) {
             return;
         }
+        if (thinkingStartMs > 0 && thinkingDurationSeconds == 0) {
+            thinkingDurationSeconds = Math.max(1, Math.round((System.currentTimeMillis() - thinkingStartMs) / 1000.0f));
+        }
         // 累积完整回复用于后续持久化
         answer.append(chunk);
         // 按配置的分块大小推送 SSE 消息
@@ -222,6 +229,10 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isBlank(chunk)) {
             return;
         }
+        if (thinkingStartMs == 0) {
+            thinkingStartMs = System.currentTimeMillis();
+        }
+        thinking.append(chunk);
         sendChunked(TYPE_THINK, chunk);
     }
 
@@ -243,12 +254,12 @@ public class StreamChatEventHandler implements StreamCallback {
         if (taskManager.isCancelled(taskId)) {
             return;
         }
-        // 持久化完整的 AI 回复消息到数据库
-        String messageId = memoryService.append(conversationId, UserContext.getUserId(),
-                ChatMessage.assistant(answer.toString()));
+        String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+        ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
+        String messageId = memoryService.append(conversationId, UserContext.getUserId(), message);
         String title = resolveTitleForEvent();
+        String messageIdText = StrUtil.isBlank(messageId) ? null : messageId;
         // 发送完成事件和结束标记，然后注销任务并关闭 SSE 连接
-        String messageIdText = StrUtil.isBlank(messageId)? null : messageId;
         sender.sendEvent(SSEEventType.FINISH.value(), new CompletionPayload(messageIdText, title));
         sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
         taskManager.unregister(taskId);
@@ -301,6 +312,10 @@ public class StreamChatEventHandler implements StreamCallback {
         if (!buffer.isEmpty()) {
             sender.sendEvent(SSEEventType.MESSAGE.value(), new MessageDelta(type, buffer.toString()));
         }
+    }
+
+    private Integer resolveThinkingDuration() {
+        return thinkingDurationSeconds > 0 ? thinkingDurationSeconds : null;
     }
 
     /**
