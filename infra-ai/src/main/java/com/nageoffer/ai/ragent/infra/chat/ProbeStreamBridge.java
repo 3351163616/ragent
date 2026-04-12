@@ -17,16 +17,14 @@
 
 package com.nageoffer.ai.ragent.infra.chat;
 
-import com.nageoffer.ai.ragent.framework.errorcode.BaseErrorCode;
-import com.nageoffer.ai.ragent.framework.exception.RemoteException;
 import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 流式首包探测桥接器
@@ -34,88 +32,56 @@ import java.util.concurrent.atomic.AtomicReference;
 final class ProbeStreamBridge implements StreamCallback {
 
     private final StreamCallback downstream;
+    private final CompletableFuture<ProbeResult> probe = new CompletableFuture<>();
     private final Object lock = new Object();
-    private final List<BufferedEvent> bufferedEvents = new ArrayList<>();
+    private final List<Runnable> buffer = new ArrayList<>();
     private volatile boolean committed;
-
-    private final CountDownLatch latch = new CountDownLatch(1);
-    private final AtomicBoolean hasContent = new AtomicBoolean(false);
-    private final AtomicBoolean eventFired = new AtomicBoolean(false);
-    private final AtomicReference<Throwable> error = new AtomicReference<>();
 
     ProbeStreamBridge(StreamCallback downstream) {
         this.downstream = downstream;
-        this.committed = false;
     }
-
-    // ==================== StreamCallback 实现 ====================
 
     @Override
     public void onContent(String content) {
-        markContent();
-        bufferOrDispatch(BufferedEvent.content(content));
+        probe.complete(ProbeResult.success());
+        bufferOrDispatch(() -> downstream.onContent(content));
     }
 
     @Override
     public void onThinking(String content) {
-        markContent();
-        bufferOrDispatch(BufferedEvent.thinking(content));
+        probe.complete(ProbeResult.success());
+        bufferOrDispatch(() -> downstream.onThinking(content));
     }
 
     @Override
     public void onComplete() {
-        markComplete();
-        bufferOrDispatch(BufferedEvent.complete());
+        probe.complete(ProbeResult.noContent());
+        bufferOrDispatch(downstream::onComplete);
     }
 
     @Override
     public void onError(Throwable t) {
-        markError(t);
-        bufferOrDispatch(BufferedEvent.error(t));
+        probe.complete(ProbeResult.error(t));
+        bufferOrDispatch(() -> downstream.onError(t));
     }
-
-    // ==================== 探测等待 ====================
 
     /**
      * 阻塞等待首包探测结果，SUCCESS 时自动提交缓冲
      */
     ProbeResult awaitFirstPacket(long timeout, TimeUnit unit) throws InterruptedException {
-        boolean completed = latch.await(timeout, unit);
-
-        if (error.get() != null) {
-            return ProbeResult.error(error.get());
-        }
-        if (!completed) {
+        ProbeResult result;
+        try {
+            result = probe.get(timeout, unit);
+        } catch (TimeoutException e) {
             return ProbeResult.timeout();
+        } catch (ExecutionException e) {
+            return ProbeResult.error(e.getCause());
         }
-        if (!hasContent.get()) {
-            return ProbeResult.noContent();
+
+        if (result.isSuccess()) {
+            commit();
         }
-
-        commit();
-        return ProbeResult.success();
-    }
-
-    // ==================== 内部方法 ====================
-
-    private void markContent() {
-        hasContent.set(true);
-        fireEventOnce();
-    }
-
-    private void markComplete() {
-        fireEventOnce();
-    }
-
-    private void markError(Throwable t) {
-        error.set(t);
-        fireEventOnce();
-    }
-
-    private void fireEventOnce() {
-        if (eventFired.compareAndSet(false, true)) {
-            latch.countDown();
-        }
+        return result;
     }
 
     private void commit() {
@@ -124,62 +90,21 @@ final class ProbeStreamBridge implements StreamCallback {
                 return;
             }
             committed = true;
-            for (BufferedEvent event : bufferedEvents) {
-                dispatch(event);
-            }
+            buffer.forEach(Runnable::run);
         }
     }
 
-    private void bufferOrDispatch(BufferedEvent event) {
+    private void bufferOrDispatch(Runnable action) {
         boolean dispatchNow;
         synchronized (lock) {
             dispatchNow = committed;
             if (!dispatchNow) {
-                bufferedEvents.add(event);
+                buffer.add(action);
             }
         }
         if (dispatchNow) {
-            dispatch(event);
+            action.run();
         }
-    }
-
-    private void dispatch(BufferedEvent event) {
-        switch (event.type()) {
-            case CONTENT -> downstream.onContent(event.content());
-            case THINKING -> downstream.onThinking(event.content());
-            case COMPLETE -> downstream.onComplete();
-            case ERROR -> downstream.onError(event.error() != null
-                    ? event.error()
-                    : new RemoteException("流式请求失败", BaseErrorCode.REMOTE_ERROR));
-        }
-    }
-
-    // ==================== 内部数据结构 ====================
-
-    private record BufferedEvent(EventType type, String content, Throwable error) {
-
-        private static BufferedEvent content(String content) {
-            return new BufferedEvent(EventType.CONTENT, content, null);
-        }
-
-        private static BufferedEvent thinking(String content) {
-            return new BufferedEvent(EventType.THINKING, content, null);
-        }
-
-        private static BufferedEvent complete() {
-            return new BufferedEvent(EventType.COMPLETE, null, null);
-        }
-
-        private static BufferedEvent error(Throwable error) {
-            return new BufferedEvent(EventType.ERROR, null, error);
-        }
-    }
-
-    private enum EventType {
-        CONTENT,
-        THINKING,
-        COMPLETE,
-        ERROR
     }
 
     /**
