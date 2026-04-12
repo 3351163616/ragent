@@ -68,20 +68,14 @@ public final class ProbeBufferingCallback implements StreamCallback {
      * 首包探测成功后提交
      */
     void commit() {
-        List<BufferedEvent> snapshot;
         synchronized (lock) {
             if (committed) {
                 return;
             }
             committed = true;
-            if (bufferedEvents.isEmpty()) {
-                return;
+            for (BufferedEvent event : bufferedEvents) {
+                dispatch(event);
             }
-            snapshot = new ArrayList<>(bufferedEvents);
-            bufferedEvents.clear();
-        }
-        for (BufferedEvent event : snapshot) {
-            dispatch(event);
         }
     }
 
