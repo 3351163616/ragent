@@ -19,55 +19,106 @@ package com.nageoffer.ai.ragent.infra.chat;
 
 import com.nageoffer.ai.ragent.framework.errorcode.BaseErrorCode;
 import com.nageoffer.ai.ragent.framework.exception.RemoteException;
+import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 流式首包探测回调
+ * 流式首包探测桥接器
  */
-public final class ProbeBufferingCallback implements StreamCallback {
+final class ProbeStreamBridge implements StreamCallback {
 
     private final StreamCallback downstream;
-    private final FirstPacketAwaiter awaiter;
     private final Object lock = new Object();
     private final List<BufferedEvent> bufferedEvents = new ArrayList<>();
     private volatile boolean committed;
 
-    ProbeBufferingCallback(StreamCallback downstream, FirstPacketAwaiter awaiter) {
+    private final CountDownLatch latch = new CountDownLatch(1);
+    private final AtomicBoolean hasContent = new AtomicBoolean(false);
+    private final AtomicBoolean eventFired = new AtomicBoolean(false);
+    private final AtomicReference<Throwable> error = new AtomicReference<>();
+
+    ProbeStreamBridge(StreamCallback downstream) {
         this.downstream = downstream;
-        this.awaiter = awaiter;
         this.committed = false;
     }
 
+    // ==================== StreamCallback 实现 ====================
+
     @Override
     public void onContent(String content) {
-        awaiter.markContent();
+        markContent();
         bufferOrDispatch(BufferedEvent.content(content));
     }
 
     @Override
     public void onThinking(String content) {
-        awaiter.markContent();
+        markContent();
         bufferOrDispatch(BufferedEvent.thinking(content));
     }
 
     @Override
     public void onComplete() {
-        awaiter.markComplete();
+        markComplete();
         bufferOrDispatch(BufferedEvent.complete());
     }
 
     @Override
     public void onError(Throwable t) {
-        awaiter.markError(t);
+        markError(t);
         bufferOrDispatch(BufferedEvent.error(t));
     }
 
+    // ==================== 探测等待 ====================
+
     /**
-     * 首包探测成功后提交
+     * 阻塞等待首包探测结果，SUCCESS 时自动提交缓冲
      */
-    void commit() {
+    ProbeResult awaitFirstPacket(long timeout, TimeUnit unit) throws InterruptedException {
+        boolean completed = latch.await(timeout, unit);
+
+        if (error.get() != null) {
+            return ProbeResult.error(error.get());
+        }
+        if (!completed) {
+            return ProbeResult.timeout();
+        }
+        if (!hasContent.get()) {
+            return ProbeResult.noContent();
+        }
+
+        commit();
+        return ProbeResult.success();
+    }
+
+    // ==================== 内部方法 ====================
+
+    private void markContent() {
+        hasContent.set(true);
+        fireEventOnce();
+    }
+
+    private void markComplete() {
+        fireEventOnce();
+    }
+
+    private void markError(Throwable t) {
+        error.set(t);
+        fireEventOnce();
+    }
+
+    private void fireEventOnce() {
+        if (eventFired.compareAndSet(false, true)) {
+            latch.countDown();
+        }
+    }
+
+    private void commit() {
         synchronized (lock) {
             if (committed) {
                 return;
@@ -103,6 +154,8 @@ public final class ProbeBufferingCallback implements StreamCallback {
         }
     }
 
+    // ==================== 内部数据结构 ====================
+
     private record BufferedEvent(EventType type, String content, Throwable error) {
 
         private static BufferedEvent content(String content) {
@@ -127,5 +180,42 @@ public final class ProbeBufferingCallback implements StreamCallback {
         THINKING,
         COMPLETE,
         ERROR
+    }
+
+    /**
+     * 探测结果
+     */
+    @Getter
+    static class ProbeResult {
+
+        enum Type {SUCCESS, ERROR, TIMEOUT, NO_CONTENT}
+
+        private final Type type;
+        private final Throwable error;
+
+        private ProbeResult(Type type, Throwable error) {
+            this.type = type;
+            this.error = error;
+        }
+
+        static ProbeResult success() {
+            return new ProbeResult(Type.SUCCESS, null);
+        }
+
+        static ProbeResult error(Throwable t) {
+            return new ProbeResult(Type.ERROR, t);
+        }
+
+        static ProbeResult timeout() {
+            return new ProbeResult(Type.TIMEOUT, null);
+        }
+
+        static ProbeResult noContent() {
+            return new ProbeResult(Type.NO_CONTENT, null);
+        }
+
+        boolean isSuccess() {
+            return type == Type.SUCCESS;
+        }
     }
 }
