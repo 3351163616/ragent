@@ -154,7 +154,7 @@ public class StreamChatEventHandler implements StreamCallback {
         }
         String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
         ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
-        String messageId = memoryService.append(conversationId, UserContext.getUserId(), message);
+        String messageId = memoryService.append(conversationId, userId, message);
         String title = resolveTitleForEvent();
         String messageIdText = StrUtil.isBlank(messageId) ? null : messageId;
         sender.sendEvent(SSEEventType.FINISH.value(), new CompletionPayload(messageIdText, title));
