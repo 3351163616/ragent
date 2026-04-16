@@ -235,26 +235,29 @@ public class RetrievalEngine {
     }
 
     private List<MCPResponse> executeMcpTools(String question, List<NodeScore> mcpIntentScores) {
-        List<MCPRequest> requests = mcpIntentScores.stream()
-                .map(ns -> buildMcpRequest(question, ns.getNode()))
-                .filter(Objects::nonNull)
-                .toList();
-
-        if (requests.isEmpty()) {
+        if (CollUtil.isEmpty(mcpIntentScores)) {
             return List.of();
         }
 
-        return requests.stream()
-                .map(request -> {
-                    try {
-                        return CompletableFuture.supplyAsync(() -> executeSingleMcpTool(request), mcpBatchExecutor)
-                                .orTimeout(MCP_TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                                .join();
-                    } catch (Exception e) {
-                        log.error("MCP 工具调用超时或异常, toolId: {}", request.getToolId(), e);
-                        return MCPResponse.error(request.getToolId(), "TIMEOUT", "工具调用超时或异常: " + e.getMessage());
-                    }
+        List<CompletableFuture<MCPResponse>> futures = mcpIntentScores.stream()
+                .map(ns -> {
+                    String toolId = ns.getNode().getMcpToolId();
+                    return CompletableFuture
+                            .supplyAsync(() -> {
+                                MCPRequest request = buildMcpRequest(question, ns.getNode());
+                                return request == null ? null : executeSingleMcpTool(request);
+                            }, mcpBatchExecutor)
+                            .orTimeout(MCP_TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            .exceptionally(e -> {
+                                log.error("MCP 工具调用超时或异常, toolId: {}", toolId, e);
+                                return MCPResponse.error(toolId, "TIMEOUT", "工具调用超时或异常: " + e.getMessage());
+                            });
                 })
+                .toList();
+
+        return futures.stream()
+                .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
                 .toList();
     }
 
