@@ -48,6 +48,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.DEFAULT_TOP_K;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_MIN_SCORE;
@@ -61,6 +62,8 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MULTI_CHANNEL_KEY
 @Service
 @RequiredArgsConstructor
 public class RetrievalEngine {
+
+    private static final long MCP_TOOL_TIMEOUT_SECONDS = 30;
 
     private final ContextFormatter contextFormatter;
     private final MCPParameterExtractor mcpParameterExtractor;
@@ -91,10 +94,17 @@ public class RetrievalEngine {
         int finalTopK = topK > 0 ? topK : DEFAULT_TOP_K;
         List<CompletableFuture<SubQuestionContext>> tasks = subIntents.stream()
                 .map(si -> CompletableFuture.supplyAsync(
-                        () -> buildSubQuestionContext(
-                                si,
-                                resolveSubQuestionTopK(si, finalTopK)
-                        ),
+                        () -> {
+                            try {
+                                return buildSubQuestionContext(
+                                        si,
+                                        resolveSubQuestionTopK(si, finalTopK)
+                                );
+                            } catch (Exception e) {
+                                log.error("子问题上下文构建失败，降级为空上下文，question：{}", si.subQuestion(), e);
+                                return new SubQuestionContext(si.subQuestion(), "", "", Map.of());
+                            }
+                        },
                         ragContextExecutor
                 ))
                 .toList();
@@ -234,13 +244,17 @@ public class RetrievalEngine {
             return List.of();
         }
 
-        // 并行执行所有 MCP 工具调用
-        List<CompletableFuture<MCPResponse>> futures = requests.stream()
-                .map(request -> CompletableFuture.supplyAsync(() -> executeSingleMcpTool(request), mcpBatchExecutor))
-                .toList();
-
-        return futures.stream()
-                .map(CompletableFuture::join)
+        return requests.stream()
+                .map(request -> {
+                    try {
+                        return CompletableFuture.supplyAsync(() -> executeSingleMcpTool(request), mcpBatchExecutor)
+                                .orTimeout(MCP_TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                                .join();
+                    } catch (Exception e) {
+                        log.error("MCP 工具调用超时或异常, toolId: {}", request.getToolId(), e);
+                        return MCPResponse.error(request.getToolId(), "TIMEOUT", "工具调用超时或异常: " + e.getMessage());
+                    }
+                })
                 .toList();
     }
 

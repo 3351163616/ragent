@@ -26,6 +26,7 @@ import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.rag.core.rewrite.RewriteResult;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -40,6 +41,7 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_MIN_SCORE;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MAX_INTENT_COUNT;
 import static com.nageoffer.ai.ragent.rag.enums.IntentKind.SYSTEM;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class IntentResolver {
@@ -56,7 +58,14 @@ public class IntentResolver {
                 : List.of(rewriteResult.rewrittenQuestion());
         List<CompletableFuture<SubQuestionIntent>> tasks = subQuestions.stream()
                 .map(q -> CompletableFuture.supplyAsync(
-                        () -> new SubQuestionIntent(q, classifyIntents(q)),
+                        () -> {
+                            try {
+                                return new SubQuestionIntent(q, classifyIntents(q));
+                            } catch (Exception e) {
+                                log.error("子问题意图分类失败，降级为空意图，question：{}", q, e);
+                                return new SubQuestionIntent(q, List.of());
+                            }
+                        },
                         intentClassifyExecutor
                 ))
                 .toList();
