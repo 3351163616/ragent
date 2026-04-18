@@ -75,17 +75,11 @@ public class RetrievalEngine {
 
     /**
      * 检索方法：根据子问题意图列表执行检索，整合知识库和MCP工具的结果
-     *
-     * @param subIntents 子问题意图列表，包含每个子问题及其相关的意图节点和评分
-     * @param topK       需要返回的最相关结果数量，若 ≤0 则使用默认值
-     * @return RetrievalContext 检索上下文，包含知识库上下文、MCP上下文和分组的检索块
      */
     @RagTraceNode(name = "retrieval-engine", type = "RETRIEVE")
     public RetrievalContext retrieve(List<SubQuestionIntent> subIntents, int topK) {
         if (CollUtil.isEmpty(subIntents)) {
             return RetrievalContext.builder()
-                    .mcpContext("")
-                    .kbContext("")
                     .intentChunks(Map.of())
                     .build();
         }
@@ -148,9 +142,7 @@ public class RetrievalEngine {
     }
 
     /**
-     * 子问题实际 TopK 计算规则：
-     * 1. 命中 KB 意图节点且配置了节点级 topK：取最大值（多意图保守放大）
-     * 2. 没有任何可用节点级 topK：回退到全局 topK
+     * 子问题实际 TopK 计算规则
      */
     private int resolveSubQuestionTopK(SubQuestionIntent intent, int fallbackTopK) {
         return NodeScoreFilters.kb(intent.nodeScores()).stream()
