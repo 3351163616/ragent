@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -49,6 +50,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MultiChannelRetrievalEngine {
+
+    private static final long SEARCH_CHANNEL_TIMEOUT_SECONDS = 20;
 
     private final List<SearchChannel> searchChannels;
     private final List<SearchResultPostProcessor> postProcessors;
@@ -94,25 +97,25 @@ public class MultiChannelRetrievalEngine {
         log.info("启用的检索通道：{}",
                 enabledChannels.stream().map(SearchChannel::getName).toList());
 
-        // 并行执行所有通道
+        // 并行执行所有通道，每个通道有独立超时保护
         List<CompletableFuture<SearchChannelResult>> futures = enabledChannels.stream()
                 .map(channel -> CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                log.info("执行检索通道：{}", channel.getName());
-                                return channel.search(context);
-                            } catch (Exception e) {
-                                log.error("检索通道 {} 执行失败", channel.getName(), e);
-                                return SearchChannelResult.builder()
-                                        .channelType(channel.getType())
-                                        .channelName(channel.getName())
-                                        .chunks(List.of())
-                                        .confidence(0.0)
-                                        .build();
-                            }
-                        },
-                        ragRetrievalExecutor
-                ))
+                                () -> {
+                                    try {
+                                        log.info("执行检索通道：{}", channel.getName());
+                                        return channel.search(context);
+                                    } catch (Exception e) {
+                                        log.error("检索通道 {} 执行失败", channel.getName(), e);
+                                        return emptyResult(channel);
+                                    }
+                                },
+                                ragRetrievalExecutor
+                        )
+                        .orTimeout(SEARCH_CHANNEL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(e -> {
+                            log.error("检索通道 {} 超时或异常", channel.getName(), e);
+                            return emptyResult(channel);
+                        }))
                 .toList();
 
         // 等待所有通道完成并统计
@@ -121,14 +124,7 @@ public class MultiChannelRetrievalEngine {
         int totalChunks = 0;
 
         List<SearchChannelResult> results = futures.stream()
-                .map(future -> {
-                    try {
-                        return future.join();
-                    } catch (Exception e) {
-                        log.error("获取通道检索结果失败", e);
-                        return null;
-                    }
-                })
+                .map(CompletableFuture::join)
                 .filter(Objects::nonNull)
                 .toList();
 
@@ -209,6 +205,15 @@ public class MultiChannelRetrievalEngine {
                 initialSize, chunks.size());
 
         return chunks;
+    }
+
+    private SearchChannelResult emptyResult(SearchChannel channel) {
+        return SearchChannelResult.builder()
+                .channelType(channel.getType())
+                .channelName(channel.getName())
+                .chunks(List.of())
+                .confidence(0.0)
+                .build();
     }
 
     /**

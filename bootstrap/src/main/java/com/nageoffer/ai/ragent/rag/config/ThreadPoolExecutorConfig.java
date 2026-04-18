@@ -60,13 +60,13 @@ public class ThreadPoolExecutorConfig {
     }
 
     /**
-     * RAG上下文处理线程池
+     * RAG上下文处理线程池（子问题级并行：检索+MCP）
      */
     @Bean
     public Executor ragContextThreadPoolExecutor() {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                2,
-                4,
+                CPU_COUNT,
+                CPU_COUNT << 1,
                 60,
                 TimeUnit.SECONDS,
                 new SynchronousQueue<>(),

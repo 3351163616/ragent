@@ -46,7 +46,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
@@ -63,6 +62,7 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MULTI_CHANNEL_KEY
 public class RetrievalEngine {
 
     private static final long MCP_TOOL_TIMEOUT_SECONDS = 30;
+    private static final long RETRIEVAL_CONTEXT_TIMEOUT_SECONDS = 45;
 
     private final ContextFormatter contextFormatter;
     private final MCPParameterExtractor mcpParameterExtractor;
@@ -87,19 +87,24 @@ public class RetrievalEngine {
         int finalTopK = topK > 0 ? topK : DEFAULT_TOP_K;
         List<CompletableFuture<SubQuestionContext>> tasks = subIntents.stream()
                 .map(si -> CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return buildSubQuestionContext(
-                                        si,
-                                        resolveSubQuestionTopK(si, finalTopK)
-                                );
-                            } catch (Exception e) {
-                                log.error("子问题上下文构建失败，降级为空上下文，question：{}", si.subQuestion(), e);
-                                return new SubQuestionContext(si.subQuestion(), "", "", Map.of());
-                            }
-                        },
-                        ragContextExecutor
-                ))
+                                () -> {
+                                    try {
+                                        return buildSubQuestionContext(
+                                                si,
+                                                resolveSubQuestionTopK(si, finalTopK)
+                                        );
+                                    } catch (Exception e) {
+                                        log.error("子问题上下文构建失败，降级为空上下文，question：{}", si.subQuestion(), e);
+                                        return new SubQuestionContext(si.subQuestion(), "", "", Map.of());
+                                    }
+                                },
+                                ragContextExecutor
+                        )
+                        .orTimeout(RETRIEVAL_CONTEXT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(e -> {
+                            log.error("子问题上下文构建超时，降级为空上下文，question：{}", si.subQuestion(), e);
+                            return new SubQuestionContext(si.subQuestion(), "", "", Map.of());
+                        }))
                 .toList();
         List<SubQuestionContext> contexts = tasks.stream()
                 .map(CompletableFuture::join)
@@ -107,7 +112,7 @@ public class RetrievalEngine {
 
         StringBuilder kbBuilder = new StringBuilder();
         StringBuilder mcpBuilder = new StringBuilder();
-        Map<String, List<RetrievedChunk>> mergedIntentChunks = new ConcurrentHashMap<>();
+        Map<String, List<RetrievedChunk>> mergedIntentChunks = new HashMap<>();
 
         for (SubQuestionContext context : contexts) {
             if (StrUtil.isNotBlank(context.kbContext())) {
@@ -185,7 +190,7 @@ public class RetrievalEngine {
         }
 
         // 按意图节点分组（用于格式化上下文）
-        Map<String, List<RetrievedChunk>> intentChunks = new ConcurrentHashMap<>();
+        Map<String, List<RetrievedChunk>> intentChunks = new HashMap<>();
 
         // 如果有意图识别结果，按意图节点 ID 分组
         if (CollUtil.isNotEmpty(kbIntents)) {

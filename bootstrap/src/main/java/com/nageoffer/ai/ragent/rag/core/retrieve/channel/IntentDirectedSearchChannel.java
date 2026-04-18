@@ -21,6 +21,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
+import com.nageoffer.ai.ragent.rag.core.intent.NodeScoreFilters;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieverService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.strategy.IntentParallelRetriever;
 import lombok.extern.slf4j.Slf4j;
@@ -150,11 +151,10 @@ public class IntentDirectedSearchChannel implements SearchChannel {
      */
     private List<NodeScore> extractKbIntents(SearchContext context) {
         double minScore = properties.getChannels().getIntentDirected().getMinIntentScore();
-        return context.getIntents().stream()
+        List<NodeScore> allScores = context.getIntents().stream()
                 .flatMap(si -> si.nodeScores().stream())
-                .filter(ns -> ns.getNode() != null && ns.getNode().isKB())
-                .filter(ns -> ns.getScore() >= minScore)
                 .toList();
+        return NodeScoreFilters.kb(allScores, minScore);
     }
 
     /**

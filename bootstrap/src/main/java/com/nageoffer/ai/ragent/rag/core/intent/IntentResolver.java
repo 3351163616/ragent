@@ -32,8 +32,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_MIN_SCORE;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MAX_INTENT_COUNT;
@@ -43,6 +44,8 @@ import static com.nageoffer.ai.ragent.rag.enums.IntentKind.SYSTEM;
 @Service
 @RequiredArgsConstructor
 public class IntentResolver {
+
+    private static final long INTENT_CLASSIFY_TIMEOUT_SECONDS = 15;
 
     @Qualifier("defaultIntentClassifier")
     private final IntentClassifier intentClassifier;
@@ -56,16 +59,21 @@ public class IntentResolver {
                 : List.of(rewriteResult.rewrittenQuestion());
         List<CompletableFuture<SubQuestionIntent>> tasks = subQuestions.stream()
                 .map(q -> CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return new SubQuestionIntent(q, classifyIntents(q));
-                            } catch (Exception e) {
-                                log.error("子问题意图分类失败，降级为空意图，question：{}", q, e);
-                                return new SubQuestionIntent(q, List.of());
-                            }
-                        },
-                        intentClassifyExecutor
-                ))
+                                () -> {
+                                    try {
+                                        return new SubQuestionIntent(q, classifyIntents(q));
+                                    } catch (Exception e) {
+                                        log.error("子问题意图分类失败，降级为空意图，question：{}", q, e);
+                                        return new SubQuestionIntent(q, List.of());
+                                    }
+                                },
+                                intentClassifyExecutor
+                        )
+                        .orTimeout(INTENT_CLASSIFY_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(e -> {
+                            log.error("子问题意图分类超时，降级为空意图，question：{}", q, e);
+                            return new SubQuestionIntent(q, List.of());
+                        }))
                 .toList();
         List<SubQuestionIntent> subIntents = tasks.stream()
                 .map(CompletableFuture::join)
@@ -206,7 +214,7 @@ public class IntentResolver {
         allSelected.addAll(additionalIntents);
 
         // 按子问题索引分组
-        Map<Integer, List<NodeScore>> groupedByIndex = new ConcurrentHashMap<>();
+        Map<Integer, List<NodeScore>> groupedByIndex = new HashMap<>();
         for (IntentCandidate candidate : allSelected) {
             groupedByIndex.computeIfAbsent(candidate.subQuestionIndex(), k -> new ArrayList<>())
                     .add(candidate.nodeScore());
