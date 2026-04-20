@@ -29,7 +29,6 @@ export interface SystemSettings {
       historyKeepTurns: number;
       summaryStartTurns: number;
       summaryEnabled: boolean;
-      ttlMinutes: number;
       summaryMaxChars: number;
       titleMaxLength: number;
     };

@@ -145,7 +145,6 @@ public class SystemSettingsVO {
     @Builder
     public static class MemorySettings {
         private Integer historyKeepTurns;
-        private Integer ttlMinutes;
         private Boolean summaryEnabled;
         private Integer summaryStartTurns;
         private Integer summaryMaxChars;

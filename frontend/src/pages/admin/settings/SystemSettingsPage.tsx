@@ -118,7 +118,6 @@ export function SystemSettingsPage() {
           <InfoItem label="History Keep Turns" value={rag.memory.historyKeepTurns} />
           <InfoItem label="Summary Start Turns" value={rag.memory.summaryStartTurns} />
           <InfoItem label="Summary Enabled" value={<BoolBadge value={rag.memory.summaryEnabled} />} />
-          <InfoItem label="TTL Minutes" value={rag.memory.ttlMinutes} />
           <InfoItem label="Summary Max Chars" value={rag.memory.summaryMaxChars} />
           <InfoItem label="Title Max Length" value={rag.memory.titleMaxLength} />
         </CardContent>

@@ -101,7 +101,6 @@ public class RAGSettingsController {
     private MemorySettings toMemorySettings(MemoryProperties props) {
         return MemorySettings.builder()
                 .historyKeepTurns(props.getHistoryKeepTurns())
-                .ttlMinutes(props.getTtlMinutes())
                 .summaryEnabled(props.getSummaryEnabled())
                 .summaryStartTurns(props.getSummaryStartTurns())
                 .summaryMaxChars(props.getSummaryMaxChars())
