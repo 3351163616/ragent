@@ -13,8 +13,6 @@ export interface SystemSettings {
     };
     queryRewrite: {
       enabled: boolean;
-      maxHistoryMessages: number;
-      maxHistoryChars: number;
     };
     rateLimit: {
       global: {

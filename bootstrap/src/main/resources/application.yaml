@@ -53,8 +53,6 @@ rag:
 
   query-rewrite:
     enabled: true
-    max-history-messages: 4
-    max-history-chars: 500
 
   rate-limit:
     global:

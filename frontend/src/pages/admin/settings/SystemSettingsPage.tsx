@@ -90,8 +90,6 @@ export function SystemSettingsPage() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <InfoItem label="Enabled" value={<BoolBadge value={rag.queryRewrite.enabled} />} />
-          <InfoItem label="Max History Messages" value={rag.queryRewrite.maxHistoryMessages} />
-          <InfoItem label="Max History Chars" value={rag.queryRewrite.maxHistoryChars} />
         </CardContent>
       </Card>
 
