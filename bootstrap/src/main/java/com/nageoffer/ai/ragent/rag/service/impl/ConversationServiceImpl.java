@@ -20,7 +20,6 @@ package com.nageoffer.ai.ragent.rag.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
-import com.nageoffer.ai.ragent.rag.controller.request.ConversationCreateRequest;
 import com.nageoffer.ai.ragent.rag.controller.request.ConversationUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationVO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationDO;
@@ -36,6 +35,7 @@ import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import com.nageoffer.ai.ragent.rag.service.ConversationService;
+import com.nageoffer.ai.ragent.rag.service.bo.ConversationCreateBO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -89,7 +89,7 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     @Override
-    public void createOrUpdate(ConversationCreateRequest request) {
+    public void createOrUpdate(ConversationCreateBO request) {
         String userId = request.getUserId();
         String conversationId = request.getConversationId();
         String question = request.getQuestion();

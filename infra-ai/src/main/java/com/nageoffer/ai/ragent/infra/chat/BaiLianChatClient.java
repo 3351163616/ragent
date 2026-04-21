@@ -32,8 +32,10 @@ import java.util.concurrent.Executor;
 @Service
 public class BaiLianChatClient extends AbstractOpenAIStyleChatClient {
 
-    public BaiLianChatClient(OkHttpClient httpClient, Executor modelStreamExecutor) {
-        super(httpClient, modelStreamExecutor);
+    public BaiLianChatClient(OkHttpClient syncHttpClient,
+                             OkHttpClient streamingHttpClient,
+                             Executor modelStreamExecutor) {
+        super(syncHttpClient, streamingHttpClient, modelStreamExecutor);
     }
 
     @Override

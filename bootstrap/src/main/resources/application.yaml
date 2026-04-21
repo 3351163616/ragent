@@ -49,11 +49,10 @@ rag:
     collection-name: rag_default_store
     dimension: 2048
     metric-type: COSINE
+    sse-timeout-ms: 300000  # SSE 全局超时（毫秒），默认 5 分钟
 
   query-rewrite:
     enabled: true
-    max-history-messages: 4
-    max-history-chars: 500
 
   rate-limit:
     global:
@@ -67,7 +66,6 @@ rag:
     history-keep-turns: 4
     summary-start-turns: 5
     summary-enabled: true
-    ttl-minutes: 60
     summary-max-chars: 200
     title-max-length: 30
 
@@ -109,7 +107,7 @@ ai:
       url: http://localhost:11434
       endpoints:
         chat: /v1/chat/completions
-        embedding: /api/embed
+        embedding: /v1/embeddings
     bailian:
       url: https://dashscope.aliyuncs.com
       api-key: ${BAILIAN_API_KEY:}

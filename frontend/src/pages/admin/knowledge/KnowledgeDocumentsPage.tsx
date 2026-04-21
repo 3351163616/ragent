@@ -129,6 +129,8 @@ export function KnowledgeDocumentsPage() {
   const [detailStrategies, setDetailStrategies] = useState<ChunkStrategyOption[]>([]);
   const [detailPipelines, setDetailPipelines] = useState<IngestionPipeline[]>([]);
   const [detailConfigValues, setDetailConfigValues] = useState<Record<string, string>>({});
+  const [detailNoChunk, setDetailNoChunk] = useState(false);
+  const [detailOriginalChunkSize, setDetailOriginalChunkSize] = useState("512");
   const [detailSourceLocation, setDetailSourceLocation] = useState("");
   const [detailScheduleEnabled, setDetailScheduleEnabled] = useState(false);
   const [detailScheduleCron, setDetailScheduleCron] = useState("");
@@ -195,6 +197,16 @@ export function KnowledgeDocumentsPage() {
       }
       setDetailConfigValues(values);
 
+      // 如果 chunkSize 为 -1（不分块），初始化开关状态
+      const rawChunkSize = values["chunkSize"];
+      if (rawChunkSize === String(NO_CHUNK_VALUE)) {
+        setDetailNoChunk(true);
+        setDetailOriginalChunkSize("512");
+      } else {
+        setDetailNoChunk(false);
+        setDetailOriginalChunkSize(rawChunkSize || "512");
+      }
+
       // 加载策略列表和管道列表
       getChunkStrategies().then(setDetailStrategies).catch(() => {});
       getIngestionPipelines(1, 100).then(r => setDetailPipelines(r.records || [])).catch(() => {});
@@ -209,6 +221,8 @@ export function KnowledgeDocumentsPage() {
       setDetailSourceLocation("");
       setDetailScheduleEnabled(false);
       setDetailScheduleCron("");
+      setDetailNoChunk(false);
+      setDetailOriginalChunkSize("512");
     }
   }, [detailTarget]);
 
@@ -355,6 +369,35 @@ export function KnowledgeDocumentsPage() {
         values[k] = String(v);
       }
       setDetailConfigValues(values);
+      setDetailNoChunk(false);
+      setDetailOriginalChunkSize(
+        strategy.defaultConfig["chunkSize"] !== undefined
+          ? String(strategy.defaultConfig["chunkSize"])
+          : "512"
+      );
+    }
+  };
+
+  // 处理编辑页"不分块"按钮点击
+  const handleDetailNoChunkToggle = () => {
+    if (detailNoChunk) {
+      // 取消选中，恢复原始值
+      setDetailConfigValues(v => ({ ...v, chunkSize: detailOriginalChunkSize }));
+      setDetailNoChunk(false);
+    } else {
+      // 选中，保存当前值并设置为-1
+      const currentSize = detailConfigValues["chunkSize"] || "512";
+      setDetailOriginalChunkSize(currentSize);
+      setDetailConfigValues(v => ({ ...v, chunkSize: String(NO_CHUNK_VALUE) }));
+      setDetailNoChunk(true);
+    }
+  };
+
+  // 用户手动修改块大小值时取消"不分块"状态
+  const handleDetailChunkSizeChange = (value: string) => {
+    setDetailConfigValues(v => ({ ...v, chunkSize: value }));
+    if (detailNoChunk && value !== String(NO_CHUNK_VALUE)) {
+      setDetailNoChunk(false);
     }
   };
 
@@ -733,17 +776,40 @@ export function KnowledgeDocumentsPage() {
                   </div>
 
                   {detailChunkStrategy === "fixed_size" ? (
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-3">
                       <div>
                         <div className="text-sm font-medium mb-2">块大小</div>
                         <Input type="number" value={detailConfigValues["chunkSize"] ?? "512"}
-                          onChange={e => setDetailConfigValues(v => ({ ...v, chunkSize: e.target.value }))} />
+                          onChange={e => handleDetailChunkSizeChange(e.target.value)} />
                         <div className="text-sm text-muted-foreground mt-1">字符数</div>
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">重叠大小</div>
                         <Input type="number" value={detailConfigValues["overlapSize"] ?? "128"}
                           onChange={e => setDetailConfigValues(v => ({ ...v, overlapSize: e.target.value }))} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium mb-2">不分块</div>
+                        <div className="flex h-9 items-center">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={detailNoChunk}
+                            onClick={handleDetailNoChunkToggle}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background",
+                              detailNoChunk ? "bg-blue-600" : "bg-slate-200"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform",
+                                detailNoChunk ? "translate-x-4" : "translate-x-1"
+                              )}
+                            />
+                          </button>
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-1">开启后块大小为-1</div>
                       </div>
                     </div>
                   ) : (

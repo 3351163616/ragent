@@ -15,37 +15,41 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.config;
+package com.nageoffer.ai.ragent.rag.service.bo;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Configuration;
+import lombok.NoArgsConstructor;
+
+import java.util.Date;
 
 /**
- * RAG 系统功能配置
- *
- * <p>
- * 用于管理 RAG 系统的各项功能开关，例如查询重写等
- * </p>
- *
- * <pre>
- * 示例配置：
- *
- * rag:
- *   query-rewrite:
- *     enabled: true
- * </pre>
+ * 会话创建/更新业务对象
  */
 @Data
-@Configuration
-public class RAGConfigProperties {
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ConversationCreateBO {
 
     /**
-     * 查询重写功能开关
-     * <p>
-     * 控制是否启用查询重写功能，查询重写可以将用户的查询语句优化为更适合检索的形式
-     * 默认值：{@code true}
+     * 会话ID
      */
-    @Value("${rag.query-rewrite.enabled:true}")
-    private Boolean queryRewriteEnabled;
+    private String conversationId;
+
+    /**
+     * 用户ID
+     */
+    private String userId;
+
+    /**
+     * 用户问题
+     */
+    private String question;
+
+    /**
+     * 最后更新时间
+     */
+    private Date lastTime;
 }

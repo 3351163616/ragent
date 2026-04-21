@@ -22,11 +22,11 @@ import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.rag.dto.KbResult;
 import com.nageoffer.ai.ragent.rag.dto.RetrievalContext;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
-import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
+import com.nageoffer.ai.ragent.rag.core.intent.NodeScoreFilters;
 import com.nageoffer.ai.ragent.rag.core.mcp.MCPParameterExtractor;
 import com.nageoffer.ai.ragent.rag.core.mcp.MCPRequest;
 import com.nageoffer.ai.ragent.rag.core.mcp.MCPResponse;
@@ -46,11 +46,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.DEFAULT_TOP_K;
-import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_MIN_SCORE;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MULTI_CHANNEL_KEY;
 
 /**
@@ -115,8 +113,6 @@ public class RetrievalEngine {
     public RetrievalContext retrieve(List<SubQuestionIntent> subIntents, int topK) {
         if (CollUtil.isEmpty(subIntents)) {
             return RetrievalContext.builder()
-                    .mcpContext("")
-                    .kbContext("")
                     .intentChunks(Map.of())
                     .build();
         }
@@ -126,10 +122,17 @@ public class RetrievalEngine {
         // 为每个子问题提交异步上下文构建任务，利用线程池并行加速
         List<CompletableFuture<SubQuestionContext>> tasks = subIntents.stream()
                 .map(si -> CompletableFuture.supplyAsync(
-                        () -> buildSubQuestionContext(
-                                si,
-                                resolveSubQuestionTopK(si, finalTopK)
-                        ),
+                        () -> {
+                            try {
+                                return buildSubQuestionContext(
+                                        si,
+                                        resolveSubQuestionTopK(si, finalTopK)
+                                );
+                            } catch (Exception e) {
+                                log.error("子问题上下文构建失败，降级为空上下文，question：{}", si.subQuestion(), e);
+                                return new SubQuestionContext(si.subQuestion(), "", "", Map.of());
+                            }
+                        },
                         ragContextExecutor
                 ))
                 .toList();
@@ -141,8 +144,7 @@ public class RetrievalEngine {
         // 分别拼接 KB 上下文和 MCP 上下文，合并 intentChunks
         StringBuilder kbBuilder = new StringBuilder();
         StringBuilder mcpBuilder = new StringBuilder();
-        // 使用 ConcurrentHashMap 是因为 SubQuestionContext 可能从并行任务中产生
-        Map<String, List<RetrievedChunk>> mergedIntentChunks = new ConcurrentHashMap<>();
+        Map<String, List<RetrievedChunk>> mergedIntentChunks = new HashMap<>();
 
         for (SubQuestionContext context : contexts) {
             if (StrUtil.isNotBlank(context.kbContext())) {
@@ -175,8 +177,8 @@ public class RetrievalEngine {
      */
     private SubQuestionContext buildSubQuestionContext(SubQuestionIntent intent, int topK) {
         // 按意图类型分流：KB 走向量检索，MCP 走工具调用
-        List<NodeScore> kbIntents = filterKbIntents(intent.nodeScores());
-        List<NodeScore> mcpIntents = filterMCPIntents(intent.nodeScores());
+        List<NodeScore> kbIntents = NodeScoreFilters.kb(intent.nodeScores());
+        List<NodeScore> mcpIntents = NodeScoreFilters.mcp(intent.nodeScores());
 
         // KB 检索：委托多通道检索引擎执行向量检索 + 后处理（去重、Rerank）
         KbResult kbResult = retrieveAndRerank(intent, kbIntents, topK);
@@ -190,12 +192,10 @@ public class RetrievalEngine {
     }
 
     /**
-     * 子问题实际 TopK 计算规则：
-     * 1. 命中 KB 意图节点且配置了节点级 topK：取最大值（多意图保守放大）
-     * 2. 没有任何可用节点级 topK：回退到全局 topK
+     * 子问题实际 TopK 计算规则
      */
     private int resolveSubQuestionTopK(SubQuestionIntent intent, int fallbackTopK) {
-        return filterKbIntents(intent.nodeScores()).stream()
+        return NodeScoreFilters.kb(intent.nodeScores()).stream()
                 .map(NodeScore::getNode)
                 .filter(Objects::nonNull)
                 .map(IntentNode::getTopK)
@@ -219,44 +219,6 @@ public class RetrievalEngine {
                 .append("**子问题**：").append(question).append("\n\n")
                 .append("**相关文档**：\n")
                 .append(context).append("\n\n");
-    }
-
-    /**
-     * 过滤出 MCP 类型的意图节点
-     * <p>
-     * 筛选条件：得分 >= 最低阈值、节点类型为 MCP、且已绑定 MCP 工具 ID。
-     *
-     * @param nodeScores 原始意图得分列表
-     * @return 满足条件的 MCP 意图列表
-     */
-    private List<NodeScore> filterMCPIntents(List<NodeScore> nodeScores) {
-        return nodeScores.stream()
-                .filter(ns -> ns.getScore() >= INTENT_MIN_SCORE)
-                .filter(ns -> ns.getNode() != null && ns.getNode().getKind() == IntentKind.MCP)
-                .filter(ns -> StrUtil.isNotBlank(ns.getNode().getMcpToolId()))
-                .toList();
-    }
-
-    /**
-     * 过滤出 KB（知识库）类型的意图节点
-     * <p>
-     * 筛选条件：得分 >= 最低阈值、节点类型为 KB 或未指定类型（兼容旧数据，默认当作 KB）。
-     *
-     * @param nodeScores 原始意图得分列表
-     * @return 满足条件的 KB 意图列表
-     */
-    private List<NodeScore> filterKbIntents(List<NodeScore> nodeScores) {
-        return nodeScores.stream()
-                .filter(ns -> ns.getScore() >= INTENT_MIN_SCORE)
-                .filter(ns -> {
-                    IntentNode node = ns.getNode();
-                    if (node == null) {
-                        return false;
-                    }
-                    // 兼容旧数据：kind 为 null 时默认视为 KB 类型
-                    return node.getKind() == null || node.getKind() == IntentKind.KB;
-                })
-                .toList();
     }
 
     /**
@@ -305,7 +267,7 @@ public class RetrievalEngine {
         }
 
         // 按意图节点分组（用于格式化上下文）
-        Map<String, List<RetrievedChunk>> intentChunks = new ConcurrentHashMap<>();
+        Map<String, List<RetrievedChunk>> intentChunks = new HashMap<>();
 
         // 如果有意图识别结果，按意图节点 ID 分组
         if (CollUtil.isNotEmpty(kbIntents)) {
@@ -335,22 +297,29 @@ public class RetrievalEngine {
      * @return MCP 工具调用响应列表（包含成功和失败的响应）
      */
     private List<MCPResponse> executeMcpTools(String question, List<NodeScore> mcpIntentScores) {
-        List<MCPRequest> requests = mcpIntentScores.stream()
-                .map(ns -> buildMcpRequest(question, ns.getNode()))
-                .filter(Objects::nonNull)
-                .toList();
-
-        if (requests.isEmpty()) {
+        if (CollUtil.isEmpty(mcpIntentScores)) {
             return List.of();
         }
 
-        // 并行执行所有 MCP 工具调用
-        List<CompletableFuture<MCPResponse>> futures = requests.stream()
-                .map(request -> CompletableFuture.supplyAsync(() -> executeSingleMcpTool(request), mcpBatchExecutor))
+        List<CompletableFuture<MCPResponse>> futures = mcpIntentScores.stream()
+                .map(ns -> CompletableFuture.supplyAsync(
+                        () -> {
+                            try {
+                                MCPRequest request = buildMcpRequest(question, ns.getNode());
+                                return request == null ? null : executeSingleMcpTool(request);
+                            } catch (Exception e) {
+                                String toolId = ns.getNode().getMcpToolId();
+                                log.error("MCP 工具调用异常, toolId: {}", toolId, e);
+                                return MCPResponse.error(toolId, "EXECUTION_ERROR", "工具调用异常: " + e.getMessage());
+                            }
+                        },
+                        mcpBatchExecutor
+                ))
                 .toList();
 
         return futures.stream()
                 .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
                 .toList();
     }
 
