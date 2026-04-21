@@ -21,11 +21,13 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 对话记忆服务的默认实现，负责编排对话历史和摘要的加载与合并。
@@ -55,6 +57,7 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
 
     /** 摘要服务，负责摘要的生成、加载和装饰 */
     private final ConversationMemorySummaryService summaryService;
+    private final Executor memoryLoadExecutor;
 
     /**
      * 构造方法，注入消息存储和摘要服务。
@@ -63,9 +66,11 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
      * @param summaryService 摘要服务实现
      */
     public DefaultConversationMemoryService(ConversationMemoryStore memoryStore,
-                                            ConversationMemorySummaryService summaryService) {
+                                            ConversationMemorySummaryService summaryService,
+                                            @Qualifier("memoryLoadThreadPoolExecutor") Executor memoryLoadExecutor) {
         this.memoryStore = memoryStore;
         this.summaryService = summaryService;
+        this.memoryLoadExecutor = memoryLoadExecutor;
     }
 
     /**
@@ -95,10 +100,10 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         try {
             // 并行加载摘要和历史记录：两个查询互不依赖，并行执行可将总耗时从 T1+T2 降至 max(T1,T2)
             CompletableFuture<ChatMessage> summaryFuture = CompletableFuture.supplyAsync(
-                    () -> loadSummaryWithFallback(conversationId, userId)
+                    () -> loadSummaryWithFallback(conversationId, userId), memoryLoadExecutor
             );
             CompletableFuture<List<ChatMessage>> historyFuture = CompletableFuture.supplyAsync(
-                    () -> loadHistoryWithFallback(conversationId, userId)
+                    () -> loadHistoryWithFallback(conversationId, userId), memoryLoadExecutor
             );
 
             // 等待两个并行任务都完成后，合并摘要与历史记录

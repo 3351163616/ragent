@@ -385,10 +385,11 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
      * @return 意图树的根节点列表
      */
     private List<IntentNode> loadIntentTreeFromDB() {
-        // 查出所有未逻辑删除的节点（扁平结构）
+        // 1. 查出所有未删除且已启用的节点（扁平结构）
         List<IntentNodeDO> intentNodeDOList = intentNodeMapper.selectList(
                 Wrappers.lambdaQuery(IntentNodeDO.class)
                         .eq(IntentNodeDO::getDeleted, 0)
+                        .eq(IntentNodeDO::getEnabled, 1)
         );
 
         if (intentNodeDOList.isEmpty()) {

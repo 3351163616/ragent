@@ -190,16 +190,12 @@ public class RoutingLLMService implements LLMService {
                 continue;
             }
 
-            // 创建首包探测器和缓冲回调装饰器
-            // awaiter: CountDownLatch 机制，等待首个有效内容到达
-            // wrapper: 探测阶段缓冲所有事件，避免失败模型的输出污染下游
-            FirstPacketAwaiter awaiter = new FirstPacketAwaiter();
-            ProbeBufferingCallback wrapper = new ProbeBufferingCallback(callback, awaiter);
+            ProbeStreamBridge bridge = new ProbeStreamBridge(callback);
 
             // 启动流式请求
             StreamCancellationHandle handle;
             try {
-                handle = client.streamChat(request, wrapper, target);
+                handle = client.streamChat(request, bridge, target);
             } catch (Exception e) {
                 // 启动失败：标记不健康，记录错误，尝试下一个
                 healthStore.markFailure(target.id());
@@ -217,12 +213,10 @@ public class RoutingLLMService implements LLMService {
                 continue;
             }
 
-            // 阻塞等待首包（最多 FIRST_PACKET_TIMEOUT_SECONDS 秒）
-            FirstPacketAwaiter.Result result = awaitFirstPacket(awaiter, handle, callback);
+            ProbeStreamBridge.ProbeResult result = awaitFirstPacket(bridge, handle, callback);
 
-            // 首包探测成功：提交缓冲事件回放，标记模型健康
+
             if (result.isSuccess()) {
-                wrapper.commit();
                 healthStore.markSuccess(target.id());
                 return handle;
             }
@@ -254,23 +248,11 @@ public class RoutingLLMService implements LLMService {
         return client;
     }
 
-    /**
-     * 阻塞等待流式首包到达
-     * <p>
-     * 使用 {@link FirstPacketAwaiter#await} 基于 CountDownLatch 机制等待，
-     * 若等待期间线程被中断，则取消当前流式请求并通过回调通知错误。
-     *
-     * @param awaiter  首包等待器
-     * @param handle   当前流式请求的取消句柄（中断时用于清理）
-     * @param callback 下游回调（中断时用于通知错误）
-     * @return 首包等待结果（成功/超时/错误/无内容）
-     * @throws RemoteException 当等待线程被中断时抛出
-     */
-    private FirstPacketAwaiter.Result awaitFirstPacket(FirstPacketAwaiter awaiter,
-                                                       StreamCancellationHandle handle,
-                                                       StreamCallback callback) {
+    private ProbeStreamBridge.ProbeResult awaitFirstPacket(ProbeStreamBridge bridge,
+                                                           StreamCancellationHandle handle,
+                                                           StreamCallback callback) {
         try {
-            return awaiter.await(FIRST_PACKET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return bridge.awaitFirstPacket(FIRST_PACKET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             handle.cancel();
@@ -280,23 +262,7 @@ public class RoutingLLMService implements LLMService {
         }
     }
 
-    /**
-     * 根据首包探测结果类型构建对应的错误对象并记录日志
-     * <p>
-     * 四种结果类型对应不同的错误语义：
-     * <ul>
-     *     <li>ERROR — 流式请求过程中发生异常</li>
-     *     <li>TIMEOUT — 首包在规定时间内未到达</li>
-     *     <li>NO_CONTENT — 流式请求正常完成但未返回任何内容</li>
-     *     <li>default — 未知类型，兜底处理</li>
-     * </ul>
-     *
-     * @param result 首包等待结果
-     * @param target 当前失败的候选模型
-     * @param label  能力标签（用于日志）
-     * @return 构建的错误对象，将作为 lastError 传递给后续逻辑
-     */
-    private Throwable buildLastErrorAndLog(FirstPacketAwaiter.Result result, ModelTarget target, String label) {
+    private Throwable buildLastErrorAndLog(ProbeStreamBridge.ProbeResult result, ModelTarget target, String label) {
         switch (result.getType()) {
             case ERROR -> {
                 Throwable error = result.getError() != null

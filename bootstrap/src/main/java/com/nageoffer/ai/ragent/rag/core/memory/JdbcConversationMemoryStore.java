@@ -20,12 +20,12 @@ package com.nageoffer.ai.ragent.rag.core.memory;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
-import com.nageoffer.ai.ragent.rag.controller.request.ConversationCreateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationMessageVO;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.rag.enums.ConversationMessageOrder;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.ConversationService;
+import com.nageoffer.ai.ragent.rag.service.bo.ConversationCreateBO;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationMessageBO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -156,7 +156,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
 
         // 仅 USER 消息触发会话记录的创建/更新，ASSISTANT 消息不影响会话元数据
         if (message.getRole() == ChatMessage.Role.USER) {
-            ConversationCreateRequest conversation = ConversationCreateRequest.builder()
+            ConversationCreateBO conversation = ConversationCreateBO.builder()
                     .conversationId(conversationId)
                     .userId(userId)
                     .question(message.getContent())
@@ -188,9 +188,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         }
         return new ChatMessage(
                 ChatMessage.Role.fromString(record.getRole()),
-                record.getContent(),
-                record.getThinkingContent(),
-                record.getThinkingDuration()
+                record.getContent()
         );
     }
 
@@ -209,23 +207,14 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         if (messages == null || messages.isEmpty()) {
             return List.of();
         }
-        // 先过滤掉无效消息
-        List<ChatMessage> cleaned = messages.stream()
-                .filter(this::isHistoryMessage)
-                .toList();
-        if (cleaned.isEmpty()) {
-            return List.of();
-        }
-        // 从头部跳过连续的 ASSISTANT 消息，找到第一条 USER 消息的位置
         int start = 0;
-        while (start < cleaned.size() && cleaned.get(start).getRole() == ChatMessage.Role.ASSISTANT) {
+        while (start < messages.size() && messages.get(start).getRole() == ChatMessage.Role.ASSISTANT) {
             start++;
         }
-        // 若全部都是 ASSISTANT 消息（极端情况），返回空列表
-        if (start >= cleaned.size()) {
+        if (start >= messages.size()) {
             return List.of();
         }
-        return cleaned.subList(start, cleaned.size());
+        return messages.subList(start, messages.size());
     }
 
     /**

@@ -144,12 +144,7 @@ public class MultiChannelRetrievalEngine {
                             } catch (Exception e) {
                                 // 单通道异常降级：返回空结果而非抛出异常，保证其他通道不受影响
                                 log.error("检索通道 {} 执行失败", channel.getName(), e);
-                                return SearchChannelResult.builder()
-                                        .channelType(channel.getType())
-                                        .channelName(channel.getName())
-                                        .chunks(List.of())
-                                        .confidence(0.0)
-                                        .build();
+                                return emptyResult(channel);
                             }
                         },
                         ragRetrievalExecutor
@@ -162,14 +157,7 @@ public class MultiChannelRetrievalEngine {
         int totalChunks = 0;
 
         List<SearchChannelResult> results = futures.stream()
-                .map(future -> {
-                    try {
-                        return future.join();
-                    } catch (Exception e) {
-                        log.error("获取通道检索结果失败", e);
-                        return null;
-                    }
-                })
+                .map(CompletableFuture::join)
                 .filter(Objects::nonNull)
                 .toList();
 
@@ -180,17 +168,15 @@ public class MultiChannelRetrievalEngine {
 
             if (chunkCount > 0) {
                 successCount++;
-                log.info("通道 {} 完成 ✓ - 检索到 {} 个 Chunk，置信度：{}，耗时：{}ms",
+                log.info("通道 {} 完成 ✓ - 检索到 {} 个 Chunk，耗时：{}ms",
                         result.getChannelName(),
                         chunkCount,
-                        result.getConfidence(),
                         result.getLatencyMs()
                 );
             } else {
                 failureCount++;
-                log.warn("通道 {} 完成但无结果 - 置信度：{}，耗时：{}ms",
+                log.warn("通道 {} 完成但无结果 - 耗时：{}ms",
                         result.getChannelName(),
-                        result.getConfidence(),
                         result.getLatencyMs()
                 );
             }
@@ -265,6 +251,14 @@ public class MultiChannelRetrievalEngine {
                 initialSize, chunks.size());
 
         return chunks;
+    }
+
+    private SearchChannelResult emptyResult(SearchChannel channel) {
+        return SearchChannelResult.builder()
+                .channelType(channel.getType())
+                .channelName(channel.getName())
+                .chunks(List.of())
+                .build();
     }
 
     /**

@@ -36,7 +36,6 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -44,7 +43,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONVERSATION_SUMMARY_PROMPT_PATH;
@@ -84,9 +82,6 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
 
     /** Redisson 分布式锁的 Key 前缀 */
     private static final String SUMMARY_LOCK_PREFIX = "ragent:memory:summary:lock:";
-
-    /** 分布式锁的最大持有时间（TTL），防止锁泄漏 */
-    private static final Duration SUMMARY_LOCK_TTL = Duration.ofMinutes(5);
 
     /** 会话分组服务，提供消息计数、摘要查询和消息范围查询等操作 */
     private final ConversationGroupService conversationGroupService;
@@ -217,7 +212,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         // 使用 tryLock(0, TTL) 非阻塞模式，获取失败则直接放弃（下次 ASSISTANT 消息时会重试）
         String lockKey = SUMMARY_LOCK_PREFIX + buildLockKey(conversationId, userId);
         RLock lock = redissonClient.getLock(lockKey);
-        if (!tryLock(lock)) {
+        if (!lock.tryLock()) {
             return;
         }
         try {
@@ -287,25 +282,6 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
-        }
-    }
-
-    /**
-     * 尝试获取分布式锁（非阻塞模式）。
-     * <p>
-     * 使用 waitTime=0 表示不等待，若锁已被其他线程/实例持有则立即返回 false。
-     * leaseTime 设置为 {@link #SUMMARY_LOCK_TTL}（5分钟），作为锁的最大持有时间，
-     * 防止因异常导致锁泄漏（deadlock protection）。
-     *
-     * @param lock Redisson 锁对象
-     * @return 是否成功获取锁
-     */
-    private boolean tryLock(RLock lock) {
-        try {
-            return lock.tryLock(0, SUMMARY_LOCK_TTL.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            return false;
         }
     }
 

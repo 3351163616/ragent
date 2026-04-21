@@ -46,7 +46,8 @@
       "Bash(mvn dependency:build-classpath:*)",
       "Bash(jar xf:*)",
       "Bash(mvn test:*)",
-      "Bash(mvn test-compile:*)"
+      "Bash(mvn test-compile:*)",
+      "Bash(wc:*)"
     ]
   }
 }

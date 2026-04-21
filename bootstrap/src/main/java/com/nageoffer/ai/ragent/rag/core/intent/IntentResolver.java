@@ -18,14 +18,13 @@
 package com.nageoffer.ai.ragent.rag.core.intent;
 
 import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.rag.dto.IntentCandidate;
 import com.nageoffer.ai.ragent.rag.dto.IntentGroup;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
-import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.rag.core.rewrite.RewriteResult;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -33,7 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 import java.util.concurrent.Executor;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_MIN_SCORE;
@@ -68,6 +67,7 @@ import static com.nageoffer.ai.ragent.rag.enums.IntentKind.SYSTEM;
  * @see SubQuestionIntent 子问题及其关联意图的封装
  * @see IntentGroup 按类型分组后的意图结果
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class IntentResolver {
@@ -104,7 +104,14 @@ public class IntentResolver {
         // 对每个子问题提交异步意图分类任务，并行执行以降低总延迟
         List<CompletableFuture<SubQuestionIntent>> tasks = subQuestions.stream()
                 .map(q -> CompletableFuture.supplyAsync(
-                        () -> new SubQuestionIntent(q, classifyIntents(q)),
+                        () -> {
+                            try {
+                                return new SubQuestionIntent(q, classifyIntents(q));
+                            } catch (Exception e) {
+                                log.error("子问题意图分类失败，降级为空意图，question：{}", q, e);
+                                return new SubQuestionIntent(q, List.of());
+                            }
+                        },
                         intentClassifyExecutor
                 ))
                 .toList();
@@ -139,8 +146,8 @@ public class IntentResolver {
         List<NodeScore> mcpIntents = new ArrayList<>();
         List<NodeScore> kbIntents = new ArrayList<>();
         for (SubQuestionIntent si : subIntents) {
-            mcpIntents.addAll(filterMcpIntents(si.nodeScores()));
-            kbIntents.addAll(filterKbIntents(si.nodeScores()));
+            mcpIntents.addAll(NodeScoreFilters.mcp(si.nodeScores()));
+            kbIntents.addAll(NodeScoreFilters.kb(si.nodeScores()));
         }
         return new IntentGroup(mcpIntents, kbIntents);
     }
@@ -178,42 +185,6 @@ public class IntentResolver {
         return scores.stream()
                 .filter(ns -> ns.getScore() >= INTENT_MIN_SCORE)
                 .limit(MAX_INTENT_COUNT)
-                .toList();
-    }
-
-    /**
-     * 从意图列表中筛选出 MCP 类型的意图。
-     * <p>
-     * MCP 意图必须同时满足两个条件：节点类型为 MCP，且关联了有效的 toolId。
-     * 没有 toolId 的 MCP 节点被视为配置不完整，不参与后续工具调用。
-     *
-     * @param nodeScores 意图打分列表
-     * @return MCP 类型的意图子集
-     */
-    private List<NodeScore> filterMcpIntents(List<NodeScore> nodeScores) {
-        return nodeScores.stream()
-                .filter(ns -> ns.getNode() != null && ns.getNode().getKind() == IntentKind.MCP)
-                .filter(ns -> StrUtil.isNotBlank(ns.getNode().getMcpToolId()))
-                .toList();
-    }
-
-    /**
-     * 从意图列表中筛选出 KB（知识库）类型的意图。
-     * <p>
-     * KB 意图的判定条件：节点类型为 KB，或类型字段为 null（兼容早期未标注类型的意图数据）。
-     *
-     * @param nodeScores 意图打分列表
-     * @return KB 类型的意图子集
-     */
-    private List<NodeScore> filterKbIntents(List<NodeScore> nodeScores) {
-        return nodeScores.stream()
-                .filter(ns -> {
-                    IntentNode node = ns.getNode();
-                    if (node == null) {
-                        return false;
-                    }
-                    return node.getKind() == null || node.getKind() == IntentKind.KB;
-                })
                 .toList();
     }
 
@@ -368,7 +339,7 @@ public class IntentResolver {
         allSelected.addAll(additionalIntents);
 
         // 按子问题索引分组，便于重建与原始结构对应的结果
-        Map<Integer, List<NodeScore>> groupedByIndex = new ConcurrentHashMap<>();
+        Map<Integer, List<NodeScore>> groupedByIndex = new HashMap<>();
         for (IntentCandidate candidate : allSelected) {
             groupedByIndex.computeIfAbsent(candidate.subQuestionIndex(), k -> new ArrayList<>())
                     .add(candidate.nodeScore());

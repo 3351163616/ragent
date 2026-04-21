@@ -29,6 +29,7 @@ import com.nageoffer.ai.ragent.framework.web.SseEmitterSender;
 import com.nageoffer.ai.ragent.infra.chat.StreamCallback;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
+import lombok.extern.slf4j.Slf4j;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
 
 import java.util.Optional;
@@ -58,6 +59,7 @@ import java.util.Optional;
  * @see StreamCallbackFactory 工厂类，负责创建本处理器实例
  * @see StreamTaskManager     流式任务管理器，提供取消感知能力
  */
+@Slf4j
 public class StreamChatEventHandler implements StreamCallback {
 
     /** SSE 事件中标识思考内容的类型标记 */
@@ -178,9 +180,13 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         // 即使被取消，若已累积部分回复，也要持久化，避免用户看到的内容与数据库不一致
         if (StrUtil.isNotBlank(content)) {
-            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-            ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration());
-            messageId = memoryService.append(conversationId, userId, message);
+            try {
+                String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+                ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration());
+                messageId = memoryService.append(conversationId, userId, message);
+            } catch (Exception e) {
+                log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
+            }
         }
         String title = resolveTitleForEvent();
         return new CompletionPayload(String.valueOf(messageId), title);
@@ -254,9 +260,14 @@ public class StreamChatEventHandler implements StreamCallback {
         if (taskManager.isCancelled(taskId)) {
             return;
         }
-        String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-        ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
-        String messageId = memoryService.append(conversationId, UserContext.getUserId(), message);
+        String messageId = null;
+        try {
+            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
+            messageId = memoryService.append(conversationId, userId, message);
+        } catch (Exception e) {
+            log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);
+        }
         String title = resolveTitleForEvent();
         String messageIdText = StrUtil.isBlank(messageId) ? null : messageId;
         // 发送完成事件和结束标记，然后注销任务并关闭 SSE 连接
