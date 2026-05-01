@@ -244,5 +244,4 @@ public class RAGPromptService {
         if (StrUtil.isNotBlank(node.getId())) return node.getId();
         return String.valueOf(node.getId());
     }
-
 }
