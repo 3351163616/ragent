@@ -32,12 +32,11 @@ import com.nageoffer.ai.ragent.rag.core.prompt.ContextFormatter;
 import com.nageoffer.ai.ragent.rag.dto.KbResult;
 import com.nageoffer.ai.ragent.rag.dto.RetrievalContext;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
-import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -65,9 +64,7 @@ public class RetrievalEngine {
     private final McpParameterExtractor mcpParameterExtractor;
     private final McpToolRegistry mcpToolRegistry;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
-    @Qualifier("ragContextThreadPoolExecutor")
     private final Executor ragContextExecutor;
-    @Qualifier("mcpBatchThreadPoolExecutor")
     private final Executor mcpBatchExecutor;
 
     /**

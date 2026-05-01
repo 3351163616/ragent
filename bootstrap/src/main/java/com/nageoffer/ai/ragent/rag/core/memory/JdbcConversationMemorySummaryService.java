@@ -61,8 +61,6 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     private final LLMService llmService;
     private final PromptTemplateLoader promptTemplateLoader;
     private final RedissonClient redissonClient;
-
-    @Qualifier("memorySummaryThreadPoolExecutor")
     private final Executor memorySummaryExecutor;
 
     @Override
