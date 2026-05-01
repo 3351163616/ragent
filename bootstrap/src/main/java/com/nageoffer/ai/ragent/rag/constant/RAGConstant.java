@@ -132,4 +132,14 @@ public class RAGConstant {
      * 兼顾动态数据片段与知识库内容的综合回答
      */
     public static final String MCP_KB_MIXED_PROMPT_PATH = "prompt/answer-chat-mcp-kb-mixed.st";
+
+    // ==================== 上下文格式化模板（单文件多 section） ====================
+
+    /**
+     * 上下文格式化模板文件路径
+     * <p>
+     * 包含所有上下文格式化所需的 section，通过 {@code --- section: name ---} 分隔，
+     * 使用 {@code PromptTemplateLoader.renderSection(path, section, slots)} 渲染
+     */
+    public static final String CONTEXT_FORMAT_PATH = "prompt/context-format.st";
 }

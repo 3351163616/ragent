@@ -32,10 +32,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
 
 @Service
 @RequiredArgsConstructor
 public class DefaultContextFormatter implements ContextFormatter {
+
+    private final PromptTemplateLoader templateLoader;
 
     @Override
     public String formatKbContext(List<NodeScore> kbIntents, Map<String, List<RetrievedChunk>> rerankedByIntent, int topK) {
@@ -45,13 +50,9 @@ public class DefaultContextFormatter implements ContextFormatter {
         if (CollUtil.isEmpty(kbIntents)) {
             return formatChunksWithoutIntent(rerankedByIntent, topK);
         }
-
-        // 多意图场景：合并所有规则和文档
         if (kbIntents.size() > 1) {
             return formatMultiIntentContext(kbIntents, rerankedByIntent, topK);
         }
-
-        // 单意图场景：保持原有逻辑
         return formatSingleIntentContext(kbIntents.get(0), rerankedByIntent, topK);
     }
 
@@ -64,24 +65,14 @@ public class DefaultContextFormatter implements ContextFormatter {
             return "";
         }
         String snippet = StrUtil.emptyIfNull(nodeScore.getNode().getPromptSnippet()).trim();
-        String body = chunks.stream()
-                .limit(topK)
-                .map(RetrievedChunk::getText)
-                .collect(Collectors.joining("\n"));
-        StringBuilder block = new StringBuilder();
-        if (StrUtil.isNotBlank(snippet)) {
-            block.append("#### 回答规则\n").append(snippet).append("\n\n");
-        }
-        block.append("#### 知识库片段\n````text\n").append(body).append("\n````");
-        return block.toString();
+        String body = joinChunkTexts(chunks, topK);
+        return renderKbSection(renderSnippetRules(snippet), body);
     }
 
     /**
      * 格式化多意图上下文
      */
     private String formatMultiIntentContext(List<NodeScore> kbIntents, Map<String, List<RetrievedChunk>> rerankedByIntent, int topK) {
-        StringBuilder result = new StringBuilder();
-
         // 1. 合并所有意图的回答规则
         List<String> snippets = kbIntents.stream()
                 .map(ns -> ns.getNode().getPromptSnippet())
@@ -90,12 +81,12 @@ public class DefaultContextFormatter implements ContextFormatter {
                 .distinct()
                 .toList();
 
+        String snippetSection = "";
         if (!snippets.isEmpty()) {
-            result.append("#### 回答规则\n");
-            for (int i = 0; i < snippets.size(); i++) {
-                result.append(i + 1).append(". ").append(snippets.get(i)).append("\n");
-            }
-            result.append("\n");
+            String numberedRules = IntStream.range(0, snippets.size())
+                    .mapToObj(i -> (i + 1) + ". " + snippets.get(i))
+                    .collect(Collectors.joining("\n"));
+            snippetSection = renderSnippetRules(numberedRules);
         }
 
         // 2. 合并所有意图的文档片段（去重）
@@ -105,14 +96,14 @@ public class DefaultContextFormatter implements ContextFormatter {
                 .limit(topK)
                 .toList();
 
-        if (!allChunks.isEmpty()) {
-            String body = allChunks.stream()
-                    .map(RetrievedChunk::getText)
-                    .collect(Collectors.joining("\n"));
-            result.append("#### 知识库片段\n````text\n").append(body).append("\n````");
+        if (allChunks.isEmpty()) {
+            return snippetSection;
         }
 
-        return result.toString();
+        String body = allChunks.stream()
+                .map(RetrievedChunk::getText)
+                .collect(Collectors.joining("\n"));
+        return renderKbSection(snippetSection, body);
     }
 
     private String formatChunksWithoutIntent(Map<String, List<RetrievedChunk>> rerankedByIntent, int topK) {
@@ -139,7 +130,7 @@ public class DefaultContextFormatter implements ContextFormatter {
         String body = chunks.stream()
                 .map(RetrievedChunk::getText)
                 .collect(Collectors.joining("\n"));
-        return "#### 知识库片段\n````text\n" + body + "\n````";
+        return renderKbSection("", body);
     }
 
     @Override
@@ -173,15 +164,39 @@ public class DefaultContextFormatter implements ContextFormatter {
                     if (StrUtil.isBlank(body)) {
                         return "";
                     }
-                    StringBuilder block = new StringBuilder();
-                    if (StrUtil.isNotBlank(snippet)) {
-                        block.append("#### 意图规则\n").append(snippet).append("\n");
-                    }
-                    block.append("#### 动态数据片段\n").append(body);
-                    return block.toString();
+                    String snippetSection = StrUtil.isNotBlank(snippet)
+                            ? templateLoader.renderSection(CONTEXT_FORMAT_PATH, "mcp-intent-rules", Map.of("rules", snippet))
+                            : "";
+                    return templateLoader.renderSection(CONTEXT_FORMAT_PATH, "mcp-section", Map.of(
+                            "snippet_section", snippetSection,
+                            "body", body
+                    ));
                 })
                 .filter(StrUtil::isNotBlank)
                 .collect(Collectors.joining("\n\n"));
+    }
+
+    // ==================== 工具方法 ====================
+
+    private String renderKbSection(String snippetSection, String chunksBody) {
+        return templateLoader.renderSection(CONTEXT_FORMAT_PATH, "kb-section", Map.of(
+                "snippet_section", snippetSection,
+                "chunks_body", chunksBody
+        ));
+    }
+
+    private String renderSnippetRules(String snippet) {
+        if (StrUtil.isBlank(snippet)) {
+            return "";
+        }
+        return templateLoader.renderSection(CONTEXT_FORMAT_PATH, "snippet-rules", Map.of("rules", snippet));
+    }
+
+    private String joinChunkTexts(List<RetrievedChunk> chunks, int topK) {
+        return chunks.stream()
+                .limit(topK)
+                .map(RetrievedChunk::getText)
+                .collect(Collectors.joining("\n"));
     }
 
     private String mergeAllResultsToText(Map<String, List<CallToolResult>> toolResults) {
@@ -208,21 +223,18 @@ public class DefaultContextFormatter implements ContextFormatter {
             if (!isError && text != null) {
                 successTexts.add(text);
             } else if (isError && text != null) {
-                errorTexts.add("工具调用失败: " + text);
+                errorTexts.add("- 工具调用失败: " + text);
             }
         }
 
         StringBuilder sb = new StringBuilder();
-
         for (String text : successTexts) {
             sb.append(text).append("\n\n");
         }
 
         if (CollUtil.isNotEmpty(errorTexts)) {
-            sb.append("【部分查询失败】\n");
-            for (String error : errorTexts) {
-                sb.append("- ").append(error).append("\n");
-            }
+            String errorList = String.join("\n", errorTexts);
+            sb.append(templateLoader.renderSection(CONTEXT_FORMAT_PATH, "mcp-error", Map.of("error_list", errorList)));
         }
 
         return sb.toString().trim();

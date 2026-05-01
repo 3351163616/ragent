@@ -29,6 +29,7 @@ import com.nageoffer.ai.ragent.rag.core.mcp.McpParameterExtractor;
 import com.nageoffer.ai.ragent.rag.core.mcp.McpToolExecutor;
 import com.nageoffer.ai.ragent.rag.core.mcp.McpToolRegistry;
 import com.nageoffer.ai.ragent.rag.core.prompt.ContextFormatter;
+import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import com.nageoffer.ai.ragent.rag.dto.KbResult;
 import com.nageoffer.ai.ragent.rag.dto.RetrievalContext;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
@@ -48,6 +49,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MULTI_CHANNEL_KEY;
 
 /**
@@ -61,6 +63,7 @@ public class RetrievalEngine {
 
     private final SearchChannelProperties searchProperties;
     private final ContextFormatter contextFormatter;
+    private final PromptTemplateLoader templateLoader;
     private final McpParameterExtractor mcpParameterExtractor;
     private final McpToolRegistry mcpToolRegistry;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
@@ -99,25 +102,45 @@ public class RetrievalEngine {
                 .map(CompletableFuture::join)
                 .toList();
 
-        StringBuilder kbBuilder = new StringBuilder();
-        StringBuilder mcpBuilder = new StringBuilder();
         Map<String, List<RetrievedChunk>> mergedIntentChunks = new HashMap<>();
-
         for (SubQuestionContext context : contexts) {
-            if (StrUtil.isNotBlank(context.kbContext())) {
-                appendSection(kbBuilder, context.question(), context.kbContext());
-            }
-            if (StrUtil.isNotBlank(context.mcpContext())) {
-                appendSection(mcpBuilder, context.question(), context.mcpContext());
-            }
             if (CollUtil.isNotEmpty(context.intentChunks())) {
                 mergedIntentChunks.putAll(context.intentChunks());
             }
         }
 
+        boolean singleQuestion = contexts.size() == 1;
+        String kbContext;
+        String mcpContext;
+
+        if (singleQuestion) {
+            SubQuestionContext only = contexts.get(0);
+            kbContext = StrUtil.emptyIfNull(only.kbContext()).trim();
+            mcpContext = StrUtil.emptyIfNull(only.mcpContext()).trim();
+        } else {
+            StringBuilder kbBuilder = new StringBuilder();
+            StringBuilder mcpBuilder = new StringBuilder();
+            int globalIndex = 0;
+            for (SubQuestionContext context : contexts) {
+                boolean hasKb = StrUtil.isNotBlank(context.kbContext());
+                boolean hasMcp = StrUtil.isNotBlank(context.mcpContext());
+                if (hasKb || hasMcp) {
+                    globalIndex++;
+                }
+                if (hasKb) {
+                    appendSection(kbBuilder, "sub-question-kb-wrapper", globalIndex, context.question(), context.kbContext());
+                }
+                if (hasMcp) {
+                    appendSection(mcpBuilder, "sub-question-mcp-wrapper", globalIndex, context.question(), context.mcpContext());
+                }
+            }
+            kbContext = kbBuilder.toString().trim();
+            mcpContext = mcpBuilder.toString().trim();
+        }
+
         return RetrievalContext.builder()
-                .mcpContext(mcpBuilder.toString().trim())
-                .kbContext(kbBuilder.toString().trim())
+                .mcpContext(mcpContext)
+                .kbContext(kbContext)
                 .intentChunks(mergedIntentChunks)
                 .build();
     }
@@ -149,11 +172,15 @@ public class RetrievalEngine {
                 .orElse(fallbackTopK);
     }
 
-    private void appendSection(StringBuilder builder, String question, String context) {
-        builder.append("---\n")
-                .append("**子问题**：").append(question).append("\n\n")
-                .append("**相关文档**：\n")
-                .append(context).append("\n\n");
+    private void appendSection(StringBuilder builder, String section, int index, String question, String context) {
+        if (!builder.isEmpty()) {
+            builder.append("\n");
+        }
+        builder.append(templateLoader.renderSection(CONTEXT_FORMAT_PATH, section, Map.of(
+                "index", String.valueOf(index),
+                "question", question,
+                "context", context
+        )));
     }
 
     private String executeMcpAndMerge(String question, List<NodeScore> mcpIntents) {
