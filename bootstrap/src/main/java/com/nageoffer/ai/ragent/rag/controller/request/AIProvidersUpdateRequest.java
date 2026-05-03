@@ -15,47 +15,27 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.infra.enums;
+package com.nageoffer.ai.ragent.rag.controller.request;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.Data;
+
+import java.util.Map;
 
 /**
- * 模型提供商枚举
- * 统一管理提供商名称，避免散落的字符串常量
+ * AI 服务提供方更新请求
  */
-@Getter
-@RequiredArgsConstructor
-public enum ModelProvider {
+@Data
+public class AIProvidersUpdateRequest {
 
-    /**
-     * Ollama 本地模型服务
-     */
-    OLLAMA("ollama"),
+    private Map<String, ProviderConfig> providers;
 
-    /**
-     * 阿里云百炼大模型平台
-     */
-    BAI_LIAN("bailian"),
+    @Data
+    public static class ProviderConfig {
 
-    /**
-     * 硅基流动 AI 模型服务
-     */
-    SILICON_FLOW("siliconflow"),
+        private String url;
 
-    /**
-     * MoYu OpenAI 兼容代理
-     */
-    MOYU("moyu"),
+        private String apiKey;
 
-    /**
-     * 空实现，用于测试或占位
-     */
-    NOOP("noop");
-
-    private final String id;
-
-    public boolean matches(String provider) {
-        return provider != null && provider.equalsIgnoreCase(id);
+        private Map<String, String> endpoints;
     }
 }

@@ -53,6 +53,16 @@ export interface SystemSettings {
   };
 }
 
+export type AIProviders = SystemSettings["ai"]["providers"];
+export type AISettings = SystemSettings["ai"];
+
+export interface AIModelSelection {
+  chatDefaultModel: string;
+  chatDeepThinkingModel: string;
+  embeddingDefaultModel: string;
+  rerankDefaultModel: string;
+}
+
 export interface ModelGroup {
   defaultModel?: string | null;
   deepThinkingModel?: string | null;
@@ -72,4 +82,12 @@ export interface ModelCandidate {
 
 export async function getSystemSettings(): Promise<SystemSettings> {
   return api.get<SystemSettings, SystemSettings>("/rag/settings");
+}
+
+export async function updateAIProviders(providers: AIProviders): Promise<AIProviders> {
+  return api.put<AIProviders, AIProviders>("/rag/settings/ai/providers", { providers });
+}
+
+export async function updateAIModelSelection(selection: AIModelSelection): Promise<AISettings> {
+  return api.put<AISettings, AISettings>("/rag/settings/ai/model-selection", selection);
 }

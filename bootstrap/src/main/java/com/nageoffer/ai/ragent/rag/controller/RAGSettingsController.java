@@ -18,20 +18,27 @@
 package com.nageoffer.ai.ragent.rag.controller;
 
 import com.nageoffer.ai.ragent.framework.convention.Result;
+import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.framework.web.Results;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
 import com.nageoffer.ai.ragent.rag.config.RAGConfigProperties;
 import com.nageoffer.ai.ragent.rag.config.RAGDefaultProperties;
 import com.nageoffer.ai.ragent.rag.config.RAGRateLimitProperties;
+import com.nageoffer.ai.ragent.rag.controller.request.AIModelSelectionUpdateRequest;
+import com.nageoffer.ai.ragent.rag.controller.request.AIProvidersUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.AISettings;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.DefaultSettings;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.MemorySettings;
+import com.nageoffer.ai.ragent.rag.service.AIModelSelectionConfigService;
+import com.nageoffer.ai.ragent.rag.service.AIProviderConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
@@ -50,6 +57,8 @@ public class RAGSettingsController {
     private final RAGRateLimitProperties ragRateLimitProperties;
     private final MemoryProperties memoryProperties;
     private final AIModelProperties aiModelProperties;
+    private final AIProviderConfigService aiProviderConfigService;
+    private final AIModelSelectionConfigService aiModelSelectionConfigService;
 
     @Value("${spring.servlet.multipart.max-file-size:50MB}")
     private DataSize maxFileSize;
@@ -86,6 +95,25 @@ public class RAGSettingsController {
                 .ai(toAISettings(aiModelProperties))
                 .build();
         return Results.success(response);
+    }
+
+    /**
+     * 更新 AI 服务提供方配置，立即影响当前进程内的模型路由。
+     */
+    @PutMapping("/rag/settings/ai/providers")
+    public Result<Map<String, AISettings.ProviderConfig>> updateAIProviders(@RequestBody AIProvidersUpdateRequest request) {
+        Map<String, AIModelProperties.ProviderConfig> providers = toRuntimeProviderConfig(request);
+        aiProviderConfigService.updateProviders(providers);
+        return Results.success(toAISettings(aiModelProperties).getProviders());
+    }
+
+    /**
+     * 更新 AI 默认模型选择，立即影响当前进程内的模型路由。
+     */
+    @PutMapping("/rag/settings/ai/model-selection")
+    public Result<AISettings> updateAIModelSelection(@RequestBody AIModelSelectionUpdateRequest request) {
+        aiModelSelectionConfigService.updateSelection(request);
+        return Results.success(toAISettings(aiModelProperties));
     }
 
     private DefaultSettings toDefaultSettings(RAGDefaultProperties props) {
@@ -151,5 +179,45 @@ public class RAGSettingsController {
                                 .build())
                         .collect(Collectors.toList()))
                 .build();
+    }
+
+    private Map<String, AIModelProperties.ProviderConfig> toRuntimeProviderConfig(AIProvidersUpdateRequest request) {
+        if (request == null || request.getProviders() == null) {
+            throw new ClientException("providers不能为空");
+        }
+
+        Map<String, AIModelProperties.ProviderConfig> result = new HashMap<>();
+        request.getProviders().forEach((name, provider) -> {
+            if (name == null || name.isBlank()) {
+                throw new ClientException("Provider名称不能为空");
+            }
+            if (provider == null || provider.getUrl() == null || provider.getUrl().isBlank()) {
+                throw new ClientException("Provider[" + name + "] URL不能为空");
+            }
+
+            AIModelProperties.ProviderConfig config = new AIModelProperties.ProviderConfig();
+            config.setUrl(provider.getUrl().trim());
+            config.setApiKey(provider.getApiKey());
+            config.setEndpoints(copyEndpoints(name, provider.getEndpoints()));
+            result.put(name.trim(), config);
+        });
+        return result;
+    }
+
+    private Map<String, String> copyEndpoints(String providerName, Map<String, String> endpoints) {
+        Map<String, String> result = new HashMap<>();
+        if (endpoints == null) {
+            return result;
+        }
+        endpoints.forEach((name, path) -> {
+            if (name == null || name.isBlank()) {
+                throw new ClientException("Provider[" + providerName + "] Endpoint名称不能为空");
+            }
+            if (path == null || path.isBlank()) {
+                throw new ClientException("Provider[" + providerName + "] Endpoint[" + name + "]路径不能为空");
+            }
+            result.put(name.trim(), path.trim());
+        });
+        return result;
     }
 }

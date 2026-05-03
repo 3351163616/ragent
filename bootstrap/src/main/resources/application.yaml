@@ -15,9 +15,9 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
     type: com.zaxxer.hikari.HikariDataSource
-    username: postgres
-    password: postgres
-    url: jdbc:postgresql://127.0.0.1:15432/ragent?client_encoding=UTF8
+    username: ${POSTGRES_USERNAME:postgres}
+    password: ${POSTGRES_PASSWORD:}
+    url: ${POSTGRES_JDBC_URL:jdbc:postgresql://127.0.0.1:15432/ragent?client_encoding=UTF8}
     hikari:
       connection-timeout: 5000
       idle-timeout: 600000
@@ -28,18 +28,18 @@ spring:
 
   data:
     redis:
-      host: 127.0.0.1
-      port: 16379
-      password: 123456
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
 
 rocketmq:
-  name-server: 127.0.0.1:9876
+  name-server: ${ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
   producer:
     group: ragent-producer${unique-name:}_pg
     send-message-timeout: 2000
 
 milvus:
-  uri: http://localhost:19530
+  uri: ${MILVUS_URI:http://127.0.0.1:19530}
 
 rag:
   vector:
@@ -47,7 +47,7 @@ rag:
 
   default:
     collection-name: rag_default_store
-    dimension: 2048
+    dimension: 1024
     metric-type: COSINE
     sse-timeout-ms: 300000  # SSE 全局超时（毫秒），默认 5 分钟
 
@@ -115,11 +115,17 @@ ai:
         chat: /compatible-mode/v1/chat/completions
         rerank: /api/v1/services/rerank/text-rerank/text-rerank
     siliconflow:
-      url: https://open.bigmodel.cn/api/paas/v4
-      api-key: ${ZHIPU_API_KEY:}
+      url: https://api.siliconflow.cn/v1
+      api-key: ${SILICONFLOW_API_KEY:}
       endpoints:
         chat: /chat/completions
         embedding: /embeddings
+        rerank: /rerank
+    moyu:
+      url: https://moyu.info
+      api-key: ${MOYU_API_KEY:}
+      endpoints:
+        chat: /v1/chat/completions
 
   selection:
     failure-threshold: 2
@@ -129,9 +135,13 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model: glm-5.1
+    default-model: claude-opus
     deep-thinking-model: glm-4.7
     candidates:
+      - id: claude-opus
+        provider: moyu
+        model: claude-opus-4-7
+        priority: 0
       - id: glm-5.1
         provider: siliconflow
         model: glm-5.1
@@ -156,30 +166,34 @@ ai:
         priority: 4
 
   embedding:
-    default-model: glm-embedding-3
+    default-model: bge-m3
     candidates:
-      - id: glm-embedding-3
+      - id: bge-m3
         provider: siliconflow
-        model: embedding-3
+        model: BAAI/bge-m3
         dimension: ${rag.default.dimension}
         priority: 1
 
   rerank:
-    default-model: qwen3-rerank
+    default-model: bge-reranker-v2-m3
     candidates:
+      - id: bge-reranker-v2-m3
+        provider: siliconflow
+        model: BAAI/bge-reranker-v2-m3
+        priority: 1
       - id: qwen3-rerank
         provider: bailian
         model: qwen3-rerank
-        priority: 1
+        priority: 2
       - id: rerank-noop
         provider: noop
         model: noop
         priority: 100
 
 rustfs:
-  url: http://localhost:9000
-  access-key-id: rustfsadmin
-  secret-access-key: rustfsadmin
+  url: ${RUSTFS_URL:http://127.0.0.1:9000}
+  access-key-id: ${RUSTFS_ACCESS_KEY_ID:}
+  secret-access-key: ${RUSTFS_SECRET_ACCESS_KEY:}
 
 sa-token:
   token-name: Authorization
