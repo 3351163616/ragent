@@ -19,13 +19,13 @@ package com.nageoffer.ai.ragent.rag.core.memory;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
-import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
-import com.nageoffer.ai.ragent.rag.dao.entity.ConversationMessageDO;
-import com.nageoffer.ai.ragent.rag.dao.entity.ConversationSummaryDO;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
+import com.nageoffer.ai.ragent.rag.dao.entity.ConversationMessageDO;
+import com.nageoffer.ai.ragent.rag.dao.entity.ConversationSummaryDO;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationSummaryBO;
@@ -33,7 +33,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -45,6 +44,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONVERSATION_SUMMARY_PROMPT_PATH;
 
 /**
@@ -77,9 +77,6 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONVERSATION_SUMM
 @RequiredArgsConstructor
 public class JdbcConversationMemorySummaryService implements ConversationMemorySummaryService {
 
-    /** 摘要消息的前缀标识，用于让 LLM 区分摘要与普通系统消息 */
-    private static final String SUMMARY_PREFIX = "对话摘要：";
-
     /** Redisson 分布式锁的 Key 前缀 */
     private static final String SUMMARY_LOCK_PREFIX = "ragent:memory:summary:lock:";
 
@@ -102,7 +99,6 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     private final RedissonClient redissonClient;
 
     /** 摘要专用线程池，避免摘要任务占用主业务线程 */
-    @Qualifier("memorySummaryThreadPoolExecutor")
     private final Executor memorySummaryExecutor;
 
     /**
@@ -168,13 +164,11 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         if (summary == null || StrUtil.isBlank(summary.getContent())) {
             return summary;
         }
-
-        String content = summary.getContent().trim();
-        // 幂等检查：若已有前缀则不重复添加
-        if (content.startsWith(SUMMARY_PREFIX) || content.startsWith("摘要：")) {
-            return summary;
-        }
-        return ChatMessage.system(SUMMARY_PREFIX + content);
+        String wrapped = promptTemplateLoader.renderSection(
+                CONTEXT_FORMAT_PATH, "summary-wrapper",
+                Map.of("content", summary.getContent().trim())
+        );
+        return ChatMessage.system(wrapped);
     }
 
     /**

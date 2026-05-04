@@ -77,7 +77,6 @@ public class IntentResolver {
     private final IntentClassifier intentClassifier;
 
     /** 意图分类专用线程池，用于多子问题的并行意图识别 */
-    @Qualifier("intentClassifyThreadPoolExecutor")
     private final Executor intentClassifyExecutor;
 
     /**
