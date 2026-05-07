@@ -154,6 +154,11 @@ public class AIModelProperties {
         private String apiKey;
 
         /**
+         * 协议格式：openai | anthropic
+         */
+        private String format = "openai";
+
+        /**
          * 端点映射配置
          * key: 端点类型，value: 端点路径
          */

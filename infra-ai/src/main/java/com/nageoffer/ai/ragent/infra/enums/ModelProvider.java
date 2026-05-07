@@ -49,6 +49,11 @@ public enum ModelProvider {
     MOYU("moyu"),
 
     /**
+     * NewAPI OpenAI 兼容代理
+     */
+    NEW_API("newapi"),
+
+    /**
      * 空实现，用于测试或占位
      */
     NOOP("noop");

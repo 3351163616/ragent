@@ -125,7 +125,7 @@ infra/ai/
 ├── embedding/   # EmbeddingClient 接口 + 各 Provider 实现
 ├── rerank/      # RerankClient 接口 + 各 Provider 实现
 ├── config/      # 候选清单装配、ai.providers / ai.chat / ai.embedding / ai.rerank
-├── enums/       # ModelProvider 枚举（OLLAMA / BAI_LIAN / SILICON_FLOW / MOYU / NOOP）
+├── enums/       # ModelProvider 枚举（OLLAMA / BAI_LIAN / SILICON_FLOW / MOYU / NEW_API / NOOP）
 ├── http/        # OpenAIStyleSseParser、OkHttp 配置
 ├── model/       # 健康存储、选择器、SSE 探测
 ├── token/       # token 估算
@@ -175,7 +175,7 @@ mcp/
 - `ai.chat.candidates` 定义带 `priority` / `supports-thinking` 的多模型候选清单
 - `ai.chat.default-model` 是常规问答首选，`ai.chat.deep-thinking-model` 是深度思考开关使用的模型
 - `ai.selection.failure-threshold` / `open-duration-ms` 调熔断阈值与冷却窗口
-- `ai.providers.{ollama|bailian|siliconflow|moyu}` 是各供应商 base url + apiKey + endpoints
+- `ai.providers.{ollama|newapi|siliconflow|moyu}` 是各供应商 base url + apiKey + endpoints
 - `rag.rate-limit.global` 开关全局并发限流（默认 max-concurrent=1，演示场景）
 - `rag.memory.history-keep-turns` / `summary-start-turns` / `summary-enabled` 控制会话记忆窗口与摘要触发
 - `rag.search.channels.{vector-global|intent-directed}` 调每个通道的置信度阈值与 top-k 倍率
@@ -184,7 +184,7 @@ mcp/
 - `rag.mcp.servers` 注册 MCP Server 列表（默认指向 `http://localhost:9099`）
 - `rag.trace.enabled` 关闭可在性能测试时绕过 AOP
 
-环境变量：`BAILIAN_API_KEY`（百炼）、`ZHIPU_API_KEY`（SiliconFlow / 智谱）。MoYu 默认硬编码 key（仅演示）。
+环境变量：`BAILIAN_API_KEY`（百炼）、`SILICONFLOW_API_KEY`（SiliconFlow）、`NEWAPI_API_KEY`（NewAPI）。MoYu 默认硬编码 key（仅演示）。
 
 ## Core Implementation Details
 
@@ -204,7 +204,7 @@ mcp/
 
 ### Prompt 模板（`bootstrap/src/main/resources/prompt/`）
 
-11 个 `.st`（Spring AI String Template）模板，定位在管线中各阶段：
+14 个 `.st`（Spring AI String Template）模板，定位在管线中各阶段：
 
 | 模板 | 用途 |
 |------|------|
@@ -213,7 +213,10 @@ mcp/
 | `conversation-summary.st` | 历史轮次压缩成摘要 |
 | `conversation-title.st` | 自动生成会话标题 |
 | `guidance-prompt.st` | 置信度不足时澄清引导 |
-| `mcp-parameter-extract.st` | MCP 工具调用参数提取 |
+| `guidance-ambiguity-check.st` | 候选意图分数歧义判定 |
+| `mcp-parameter-extract.st` | MCP 工具调用参数提取（system 段） |
+| `mcp-parameter-extract-user.st` | MCP 工具调用参数提取（user 段） |
+| `context-format.st` | 检索片段拼装成 Prompt 上下文 |
 | `answer-chat-kb.st` | 仅 KB 检索结果生成回答 |
 | `answer-chat-mcp.st` | 仅 MCP 工具结果生成回答 |
 | `answer-chat-mcp-kb-mixed.st` | KB + MCP 混合场景 |
@@ -232,8 +235,9 @@ mcp/
   - `BAI_LIAN` — 阿里云百炼（Chat + Rerank）
   - `SILICON_FLOW` — SiliconFlow / 智谱（Chat + Embedding）
   - `MOYU` — OpenAI 兼容代理（Chat）
+  - `NEW_API` — OpenAI 兼容代理（Chat）
   - `NOOP` — 占位/测试兜底（Rerank `priority=100` 默认兜底位）
-- **SSE 解析**：`OpenAIStyleSseParser` 被 `AbstractOpenAIStyleChatClient` 的子类共用（BaiLian、SiliconFlow、MoYu）
+- **SSE 解析**：`OpenAIStyleSseParser` 被 `AbstractOpenAIStyleChatClient` 的子类共用（BaiLian、SiliconFlow、MoYu、NewApi）
 
 ### 知识库 & ETL（`knowledge/` + `ingestion/`）
 
@@ -255,7 +259,7 @@ mcp/
 - `pg` — `PgVectorStoreService` + `PgVectorStoreAdmin`（基于 PostgreSQL + pgvector 扩展，**默认**）
 - `milvus` — `MilvusVectorStoreService` + `MilvusVectorStoreAdmin`
 
-统一接口：`VectorStoreService`（检索）、`VectorStoreAdmin`（Collection 创建/删除/索引管理）。`VectorSpaceId` + `VectorSpaceSpec` 封装集合命名与维度/度量类型。默认集合 `rag_default_store`，维度 `2048`，度量 `COSINE`（见 `rag.default.*`）。
+统一接口：`VectorStoreService`（检索）、`VectorStoreAdmin`（Collection 创建/删除/索引管理）。`VectorSpaceId` + `VectorSpaceSpec` 封装集合命名与维度/度量类型。默认集合 `rag_default_store`，维度 `1024`，度量 `COSINE`（见 `rag.default.*`）。
 
 ### 基础框架（`framework/`）
 
