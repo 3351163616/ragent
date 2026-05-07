@@ -140,10 +140,15 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                 if (line.isBlank()) {
                     continue;
                 }
+                if (log.isDebugEnabled()) {
+                    log.debug("{} SSE line: {}", provider(), line);
+                }
                 try {
                     AnthropicStyleSseParser.ParsedEvent event = AnthropicStyleSseParser.parseLine(line, gson);
                     if (event.isError()) {
-                        throw new ModelClientException(provider() + " 流式响应收到错误事件", ModelClientErrorType.INVALID_RESPONSE, null);
+                        String detail = event.errorMessage() != null ? event.errorMessage() : line;
+                        log.warn("{} 流式响应错误事件: {}", provider(), detail);
+                        throw new ModelClientException(provider() + " 流式响应收到错误事件: " + detail, ModelClientErrorType.INVALID_RESPONSE, null);
                     }
                     if (event.hasReasoning()) {
                         callback.onThinking(event.reasoning());

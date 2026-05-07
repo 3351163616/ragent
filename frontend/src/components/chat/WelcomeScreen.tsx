@@ -4,6 +4,7 @@ import { ArrowUpRight, BookOpen, Bot, Brain, Check, Lightbulb, Send, Square } fr
 import { cn } from "@/lib/utils";
 import { listSampleQuestions } from "@/services/sampleQuestionService";
 import { useChatStore } from "@/stores/chatStore";
+import { ModelSelector } from "@/components/chat/ModelSelector";
 
 type PromptPreset = {
   id?: string;
@@ -226,6 +227,7 @@ export function WelcomeScreen() {
                   ) : null}
                 </span>
               </button>
+              <ModelSelector disabled={isStreaming} variant="pill" />
               <button
                 type="button"
                 onClick={handleSubmit}

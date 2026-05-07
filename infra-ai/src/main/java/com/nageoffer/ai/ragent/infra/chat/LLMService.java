@@ -134,4 +134,17 @@ public interface LLMService {
      * @return StreamCancellationHandle 用于取消推理
      */
     StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback);
+
+    /**
+     * 流式调用（指定模型）
+     * modelId 为空时等同于 streamChat(request, callback)，走默认路由
+     *
+     * @param request  ChatRequest 完整配置的请求
+     * @param callback 流式回调接口
+     * @param modelId  指定的模型ID，为空时走默认路由
+     * @return StreamCancellationHandle 用于取消推理
+     */
+    default StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, String modelId) {
+        return streamChat(request, callback);
+    }
 }

@@ -40,6 +40,7 @@ public class StreamChatContext {
     private final String conversationId;
     private final String taskId;
     private final boolean deepThinking;
+    private final String modelId;
     private final String userId;
     private final StreamCallback callback;
 

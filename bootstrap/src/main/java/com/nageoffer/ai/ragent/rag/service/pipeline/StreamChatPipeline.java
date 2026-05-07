@@ -147,7 +147,8 @@ public class StreamChatPipeline {
                 ctx.getRewriteResult().rewrittenQuestion(),
                 ctx.getHistory(),
                 customPrompt,
-                ctx.getCallback()
+                ctx.getCallback(),
+                ctx.getModelId()
         );
         taskManager.bindHandle(ctx.getTaskId(), handle);
         return true;
@@ -177,7 +178,8 @@ public class StreamChatPipeline {
                 mergedGroup,
                 ctx.getHistory(),
                 ctx.isDeepThinking(),
-                ctx.getCallback()
+                ctx.getCallback(),
+                ctx.getModelId()
         );
         taskManager.bindHandle(ctx.getTaskId(), handle);
     }
@@ -185,7 +187,8 @@ public class StreamChatPipeline {
     // ==================== LLM 响应 ====================
 
     private StreamCancellationHandle streamSystemResponse(String question, List<ChatMessage> history,
-                                                          String customPrompt, StreamCallback callback) {
+                                                          String customPrompt, StreamCallback callback,
+                                                          String modelId) {
         String systemPrompt = StrUtil.isNotBlank(customPrompt)
                 ? customPrompt
                 : promptTemplateLoader.load(CHAT_SYSTEM_PROMPT_PATH);
@@ -202,12 +205,13 @@ public class StreamChatPipeline {
                 .temperature(0.7D)
                 .thinking(false)
                 .build();
-        return llmService.streamChat(req, callback);
+        return llmService.streamChat(req, callback, modelId);
     }
 
     private StreamCancellationHandle streamLLMResponse(RewriteResult rewriteResult, RetrievalContext ctx,
                                                        IntentGroup intentGroup, List<ChatMessage> history,
-                                                       boolean deepThinking, StreamCallback callback) {
+                                                       boolean deepThinking, StreamCallback callback,
+                                                       String modelId) {
         PromptContext promptContext = PromptContext.builder()
                 .question(rewriteResult.rewrittenQuestion())
                 .mcpContext(ctx.getMcpContext())
@@ -230,6 +234,6 @@ public class StreamChatPipeline {
                 .topP(ctx.hasMcp() ? 0.8D : 1D)
                 .build();
 
-        return llmService.streamChat(chatRequest, callback);
+        return llmService.streamChat(chatRequest, callback, modelId);
     }
 }

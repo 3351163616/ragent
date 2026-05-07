@@ -42,7 +42,7 @@ public final class AnthropicStyleSseParser {
             String eventType = trimmed.substring(EVENT_PREFIX.length()).trim();
             return switch (eventType) {
                 case "message_stop" -> ParsedEvent.done();
-                case "error" -> ParsedEvent.error();
+                case "error" -> ParsedEvent.error("SSE event: error");
                 default -> ParsedEvent.empty();
             };
         }
@@ -62,7 +62,14 @@ public final class AnthropicStyleSseParser {
         }
 
         if ("error".equals(optString(obj, "type"))) {
-            return ParsedEvent.error();
+            String msg = payload;
+            if (obj.has("error") && obj.get("error").isJsonObject()) {
+                JsonObject err = obj.getAsJsonObject("error");
+                msg = optString(err, "message") != null
+                        ? optString(err, "type") + ": " + optString(err, "message")
+                        : payload;
+            }
+            return ParsedEvent.error(msg);
         }
 
         if (!obj.has("delta") || !obj.get("delta").isJsonObject()) {
@@ -89,26 +96,26 @@ public final class AnthropicStyleSseParser {
         return obj.get(key).getAsString();
     }
 
-    public record ParsedEvent(String content, String reasoning, boolean completed, boolean isError) {
+    public record ParsedEvent(String content, String reasoning, boolean completed, boolean isError, String errorMessage) {
 
         public static ParsedEvent empty() {
-            return new ParsedEvent(null, null, false, false);
+            return new ParsedEvent(null, null, false, false, null);
         }
 
         public static ParsedEvent done() {
-            return new ParsedEvent(null, null, true, false);
+            return new ParsedEvent(null, null, true, false, null);
         }
 
-        public static ParsedEvent error() {
-            return new ParsedEvent(null, null, false, true);
+        public static ParsedEvent error(String message) {
+            return new ParsedEvent(null, null, false, true, message);
         }
 
         public static ParsedEvent content(String text) {
-            return new ParsedEvent(text, null, false, false);
+            return new ParsedEvent(text, null, false, false, null);
         }
 
         public static ParsedEvent thinking(String text) {
-            return new ParsedEvent(null, text, false, false);
+            return new ParsedEvent(null, text, false, false, null);
         }
 
         public boolean hasContent() {

@@ -4,6 +4,7 @@ import { Brain, Lightbulb, Send, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { ModelSelector } from "@/components/chat/ModelSelector";
 
 export function ChatInput() {
   const [value, setValue] = React.useState("");
@@ -98,14 +99,14 @@ export function ChatInput() {
           />
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[10px] bg-gradient-to-b from-white/0 via-white/40 to-white/90" />
         </div>
-        <div className="relative mt-2 flex items-center">
+        <div className="relative mt-2 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
             disabled={isStreaming}
             aria-pressed={deepThinkingEnabled}
             className={cn(
-              "absolute left-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+              "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
               deepThinkingEnabled
                 ? "border-[#BFDBFE] bg-[#DBEAFE] text-[#2563EB]"
                 : "border-transparent bg-[#F5F5F5] text-[#999999] hover:bg-[#EEEEEE]",
@@ -120,6 +121,7 @@ export function ChatInput() {
               ) : null}
             </span>
           </button>
+          <ModelSelector disabled={isStreaming} />
           <button
             type="button"
             onClick={handleSubmit}

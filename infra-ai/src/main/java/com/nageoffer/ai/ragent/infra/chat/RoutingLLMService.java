@@ -170,11 +170,23 @@ public class RoutingLLMService implements LLMService {
     @Override
     @RagTraceNode(name = "llm-stream-routing", type = "LLM_ROUTING")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
-        // 获取按优先级排序的候选模型列表
         List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
         if (CollUtil.isEmpty(targets)) {
             throw new RemoteException(STREAM_NO_PROVIDER_MESSAGE);
         }
+        return doStreamWithTargets(targets, request, callback);
+    }
+
+    @Override
+    public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, String modelId) {
+        if (!StringUtils.hasText(modelId)) {
+            return streamChat(request, callback);
+        }
+        List<ModelTarget> targets = List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking())));
+        return doStreamWithTargets(targets, request, callback);
+    }
+
+    private StreamCancellationHandle doStreamWithTargets(List<ModelTarget> targets, ChatRequest request, StreamCallback callback) {
 
         String label = ModelCapability.CHAT.getDisplayName();
         Throwable lastError = null;

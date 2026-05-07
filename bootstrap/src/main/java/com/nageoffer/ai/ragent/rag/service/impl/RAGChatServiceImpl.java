@@ -82,11 +82,12 @@ public class RAGChatServiceImpl implements RAGChatService {
      * @param question       用户输入的原始问题文本
      * @param conversationId 会话 ID，为空时自动生成新会话
      * @param deepThinking   是否启用深度思考模式（开启后 LLM 会输出思考过程）
+     * @param modelId        指定模型 ID（可选，空时走自动路由）
      * @param emitter        SSE 发射器，用于向前端推送流式响应事件
      */
     @Override
     @ChatRateLimit
-    public void streamChat(String question, String conversationId, Boolean deepThinking, SseEmitter emitter) {
+    public void streamChat(String question, String conversationId, Boolean deepThinking, String modelId, SseEmitter emitter) {
         // 若未传入会话 ID 或任务 ID，则使用雪花算法生成唯一标识
         String actualConversationId = StrUtil.isBlank(conversationId) ? IdUtil.getSnowflakeNextIdStr() : conversationId;
         String taskId = StrUtil.isBlank(RagTraceContext.getTaskId())
@@ -103,6 +104,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                 .conversationId(actualConversationId)
                 .taskId(taskId)
                 .deepThinking(thinkingEnabled)
+                .modelId(modelId)
                 .userId(UserContext.getUserId())
                 .callback(callback)
                 .build();
