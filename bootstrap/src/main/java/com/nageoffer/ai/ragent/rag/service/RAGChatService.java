@@ -17,6 +17,7 @@
 
 package com.nageoffer.ai.ragent.rag.service;
 
+import com.nageoffer.ai.ragent.rag.aop.ChatRateLimit;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -34,6 +35,7 @@ public interface RAGChatService {
      * @param modelId        指定模型 ID（可选，空时走自动路由）
      * @param emitter        SSE 发射器
      */
+    @ChatRateLimit
     void streamChat(String question, String conversationId, Boolean deepThinking, String modelId, SseEmitter emitter);
 
     /**
