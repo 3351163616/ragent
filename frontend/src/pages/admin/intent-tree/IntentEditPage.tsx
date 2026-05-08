@@ -492,6 +492,11 @@ export function IntentEditPage() {
                           <SelectItem value={NO_KB} disabled={form.watch("level") === 2}>
                             不绑定知识库
                           </SelectItem>
+                          {field.value && !knowledgeBases.some((kb) => kb.id === field.value) && (
+                            <SelectItem value={field.value}>
+                              当前绑定 ({currentNode.collectionName || field.value})
+                            </SelectItem>
+                          )}
                           {knowledgeBases.map((kb) => (
                             <SelectItem key={kb.id} value={kb.id}>
                               {kb.name} ({kb.collectionName})

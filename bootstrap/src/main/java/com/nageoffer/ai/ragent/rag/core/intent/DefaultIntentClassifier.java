@@ -43,6 +43,8 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_CLASSIFIER_PROMPT_PATH;
@@ -75,6 +77,10 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.INTENT_CLASSIFIER
 @Service
 @RequiredArgsConstructor
 public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegistry {
+
+    private static final Pattern INTENT_SCORE_PATTERN = Pattern.compile(
+            "\"id\"\\s*:\\s*\"([^\"]+)\"[\\s\\S]*?\"score\"\\s*:\\s*\"?([0-9]+(?:\\.[0-9]+)?)\"?"
+    );
 
     /** LLM 服务，用于调用大语言模型完成意图分类打分 */
     private final LLMService llmService;
@@ -235,22 +241,7 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
         String raw = llmService.chat(request);
 
         try {
-            // 移除 LLM 响应中可能存在的 Markdown 代码块标记（如 ```json ... ```）
-            String cleanedRaw = LLMResponseCleaner.stripMarkdownCodeFence(raw);
-
-            JsonElement root = JsonParser.parseString(cleanedRaw);
-
-            JsonArray arr;
-            if (root.isJsonArray()) {
-                // 标准格式：直接返回 JSON 数组
-                arr = root.getAsJsonArray();
-            } else if (root.isJsonObject() && root.getAsJsonObject().has("results")) {
-                // 容错：部分模型可能在外层多包一层 { "results": [...] }
-                arr = root.getAsJsonObject().getAsJsonArray("results");
-            } else {
-                log.warn("LLM 返回了非预期的 JSON 格式, 原始响应: {}", raw);
-                return List.of();
-            }
+            JsonArray arr = parseIntentResultArray(raw);
 
             List<NodeScore> scores = new ArrayList<>();
             for (JsonElement el : arr) {
@@ -290,6 +281,42 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
             log.warn("解析 LLM 响应失败, 原始内容: {}", raw, e);
             return List.of();
         }
+    }
+
+    static JsonArray parseIntentResultArray(String raw) {
+        String cleanedRaw = LLMResponseCleaner.stripMarkdownCodeFence(raw);
+        try {
+            JsonElement root = JsonParser.parseString(cleanedRaw);
+
+            if (root.isJsonArray()) {
+                return root.getAsJsonArray();
+            }
+            if (root.isJsonObject() && root.getAsJsonObject().has("results")) {
+                return root.getAsJsonObject().getAsJsonArray("results");
+            }
+
+            log.warn("LLM 返回了非预期的 JSON 格式, 原始响应: {}", raw);
+            return new JsonArray();
+        } catch (RuntimeException ex) {
+            JsonArray recovered = recoverIntentScoreArray(cleanedRaw);
+            if (!recovered.isEmpty()) {
+                log.warn("标准 JSON 解析失败，已通过宽松解析恢复 {} 个意图候选, reason={}", recovered.size(), ex.getMessage());
+                return recovered;
+            }
+            throw ex;
+        }
+    }
+
+    private static JsonArray recoverIntentScoreArray(String content) {
+        JsonArray result = new JsonArray();
+        Matcher matcher = INTENT_SCORE_PATTERN.matcher(content);
+        while (matcher.find()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("id", matcher.group(1));
+            item.addProperty("score", Double.parseDouble(matcher.group(2)));
+            result.add(item);
+        }
+        return result;
     }
 
     /**

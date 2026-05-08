@@ -69,6 +69,7 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         List<IntentNodeDO> list = this.list(new LambdaQueryWrapper<IntentNodeDO>()
                 .eq(IntentNodeDO::getDeleted, 0)
                 .orderByAsc(IntentNodeDO::getSortOrder, IntentNodeDO::getId));
+        Map<String, String> kbIdByCollectionName = buildKbIdByCollectionName(list);
 
         // 先按 parentCode 分组
         Map<String, List<IntentNodeDO>> parentMap = list.stream()
@@ -83,25 +84,48 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         // 递归构建树
         List<IntentNodeTreeVO> tree = new ArrayList<>();
         for (IntentNodeDO root : roots) {
-            tree.add(buildTree(root, parentMap));
+            tree.add(buildTree(root, parentMap, kbIdByCollectionName));
         }
         return tree;
     }
 
     private IntentNodeTreeVO buildTree(IntentNodeDO current,
-                                       Map<String, List<IntentNodeDO>> parentMap) {
+                                       Map<String, List<IntentNodeDO>> parentMap,
+                                       Map<String, String> kbIdByCollectionName) {
         IntentNodeTreeVO result = BeanUtil.toBean(current, IntentNodeTreeVO.class);
+        if (StrUtil.isBlank(result.getKbId()) && StrUtil.isNotBlank(result.getCollectionName())) {
+            result.setKbId(kbIdByCollectionName.get(result.getCollectionName()));
+        }
         List<IntentNodeDO> children = parentMap.getOrDefault(current.getIntentCode(), Collections.emptyList());
 
         if (!CollectionUtils.isEmpty(children)) {
             List<IntentNodeTreeVO> childVOs = children.stream()
-                    .map(child -> buildTree(child, parentMap))
+                    .map(child -> buildTree(child, parentMap, kbIdByCollectionName))
                     .collect(Collectors.toList());
 
             result.setChildren(childVOs);
         }
 
         return result;
+    }
+
+    private Map<String, String> buildKbIdByCollectionName(List<IntentNodeDO> nodes) {
+        Set<String> collectionNames = nodes.stream()
+                .map(IntentNodeDO::getCollectionName)
+                .filter(StrUtil::isNotBlank)
+                .collect(Collectors.toSet());
+        if (collectionNames.isEmpty()) {
+            return Map.of();
+        }
+        return knowledgeBaseMapper.selectList(new LambdaQueryWrapper<KnowledgeBaseDO>()
+                        .select(KnowledgeBaseDO::getId, KnowledgeBaseDO::getCollectionName)
+                        .in(KnowledgeBaseDO::getCollectionName, collectionNames))
+                .stream()
+                .collect(Collectors.toMap(
+                        KnowledgeBaseDO::getCollectionName,
+                        KnowledgeBaseDO::getId,
+                        (left, right) -> left
+                ));
     }
 
     @Override
