@@ -30,6 +30,8 @@ public final class LLMResponseCleaner {
     private static final Pattern LEADING_CODE_FENCE = Pattern.compile("^```[\\w-]*\\s*\\n?");
     private static final Pattern TRAILING_CODE_FENCE = Pattern.compile("\\n?```\\s*$");
 
+    private static final Pattern SMART_QUOTES = Pattern.compile("[“”‘’]");
+
     /**
      * 移除 Markdown 代码块围栏（例如 ```json ... ```）
      */
@@ -40,6 +42,7 @@ public final class LLMResponseCleaner {
         String cleaned = raw.trim();
         cleaned = LEADING_CODE_FENCE.matcher(cleaned).replaceFirst("");
         cleaned = TRAILING_CODE_FENCE.matcher(cleaned).replaceFirst("");
+        cleaned = SMART_QUOTES.matcher(cleaned).replaceAll("'");
         return cleaned.trim();
     }
 }

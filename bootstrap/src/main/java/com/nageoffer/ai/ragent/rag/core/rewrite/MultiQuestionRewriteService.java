@@ -212,15 +212,10 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     /**
      * 构建发送给 LLM 的查询改写请求。
      * <p>
-     * 消息组装顺序：System Prompt → 会话历史（最近 2 轮）→ 当前用户问题。
-     * <p>
-     * 设计考量：
-     * <ul>
-     *     <li>只保留 User 和 Assistant 角色的消息，过滤掉 System 摘要以节省 Token</li>
-     *     <li>最多保留最近 4 条消息（约 2 轮对话），足够做指代消解又不会引入过多噪声</li>
-     *     <li>使用低温度（0.1）和低 topP（0.3）确保改写结果的确定性和稳定性</li>
-     *     <li>关闭 thinking 模式，减少不必要的推理 Token 消耗</li>
-     * </ul>
+     * 消息结构：[system: 改写指令] + [user: 历史上下文 + 当前问题]。历史不以多轮
+     * user/assistant 形式注入 messages，因为实测多轮对话流会诱导模型按"延续对话"
+     * 模式回应而忽略 system 的 JSON 输出约束；改用纯文本拼进 user 消息可保留指代
+     * 消解能力又避免诱导。
      *
      * @param systemPrompt 系统提示词（改写 + 拆分的指令模板）
      * @param question     归一化后的用户问题
@@ -235,21 +230,25 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
             messages.add(ChatMessage.system(systemPrompt));
         }
 
-        // 只保留最近 1-2 轮的 User 和 Assistant 消息，用于指代消解
-        // 过滤掉 System 角色的摘要消息，避免额外 Token 浪费
+        StringBuilder userMsg = new StringBuilder();
         if (CollUtil.isNotEmpty(history)) {
             List<ChatMessage> recentHistory = history.stream()
-                    .filter(msg -> msg.getRole() == ChatMessage.Role.USER
-                            || msg.getRole() == ChatMessage.Role.ASSISTANT)
-                    .skip(Math.max(0, history.size() - 4))  // 最多保留最近 4 条消息（即 2 轮对话）
+                    .filter(m -> m.getRole() == ChatMessage.Role.USER
+                            || m.getRole() == ChatMessage.Role.ASSISTANT)
+                    .skip(Math.max(0, history.size() - 4))
                     .toList();
-            messages.addAll(recentHistory);
+            if (!recentHistory.isEmpty()) {
+                userMsg.append("【历史对话（仅供指代消解参考，禁止回答历史问题）】\n");
+                for (ChatMessage m : recentHistory) {
+                    String role = m.getRole() == ChatMessage.Role.USER ? "用户" : "助手";
+                    userMsg.append(role).append("：").append(m.getContent()).append("\n");
+                }
+                userMsg.append("\n【当前需要改写的问题】\n");
+            }
         }
+        userMsg.append(question);
+        messages.add(ChatMessage.user(userMsg.toString()));
 
-        // 当前用户问题放在消息列表末尾，作为 LLM 需要改写的目标
-        messages.add(ChatMessage.user(question));
-
-        // 使用低温度和低 topP 保证输出的确定性，关闭 thinking 模式减少 Token 消耗
         return ChatRequest.builder()
                 .messages(messages)
                 .temperature(0.1D)
