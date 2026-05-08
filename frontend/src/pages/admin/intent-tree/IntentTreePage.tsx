@@ -55,6 +55,7 @@ import {
 } from "@/services/intentTreeService";
 
 const ROOT_PARENT = "__ROOT__";
+const NO_KB = "__NO_KB__";
 
 const LEVEL_OPTIONS = [
   { value: 0, label: "DOMAIN", description: "顶层领域" },
@@ -499,13 +500,14 @@ function IntentNodeDialog({
 
   const resolvedDefaults = useMemo<FormValues>(() => {
     if (mode === "edit" && node) {
+      const kbMatch = knowledgeBases.find((kb) => kb.collectionName === node.collectionName);
       return {
         name: node.name || "",
         intentCode: node.intentCode || "",
         level: node.level ?? 0,
         kind: node.kind ?? 0,
         parentCode: node.parentCode || ROOT_PARENT,
-        kbId: node.kbId || "",
+        kbId: node.kbId || kbMatch?.id || "",
         mcpToolId: node.mcpToolId || "",
         collectionName: node.collectionName || "",
         description: node.description || "",
@@ -529,7 +531,7 @@ function IntentNodeDialog({
       level: nextLevel,
       kind: parentKind,
       parentCode: parentNode?.intentCode || ROOT_PARENT,
-      kbId: "",
+      kbId: kbMatch?.id || "",
       mcpToolId: "",
       collectionName: "",
       description: "",
@@ -580,6 +582,10 @@ function IntentNodeDialog({
         return;
       }
     } else {
+      if (values.kind === 0 && values.level === 2 && !values.kbId) {
+        form.setError("kbId", { message: "TOPIC 节点请选择知识库" });
+        return;
+      }
       // 编辑模式下也需要验证MCP工具ID
       if (values.kind === 2 && !values.mcpToolId?.trim()) {
         form.setError("mcpToolId", { message: "MCP节点必须填写工具ID" });
@@ -615,7 +621,7 @@ function IntentNodeDialog({
           parentCode,
           description: values.description?.trim() || undefined,
           examples: examples.length > 0 ? examples : undefined,
-          kbId: values.kind === 0 ? values.kbId || undefined : undefined,
+          kbId: values.kind === 0 ? values.kbId || "" : undefined,
           collectionName: undefined,
           mcpToolId: values.kind === 2 ? values.mcpToolId?.trim() || undefined : undefined,
           kind: values.kind,
@@ -771,13 +777,19 @@ function IntentNodeDialog({
                       render={({ field }) => (
                           <FormItem>
                             <FormLabel>知识库{form.watch("level") === 2 ? "（必填）" : "（可选）"}</FormLabel>
-                            <Select value={field.value} onValueChange={field.onChange}>
+                            <Select
+                                value={field.value || NO_KB}
+                                onValueChange={(value) => field.onChange(value === NO_KB ? "" : value)}
+                            >
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue placeholder="请选择知识库" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
+                                <SelectItem value={NO_KB} disabled={form.watch("level") === 2}>
+                                  不绑定知识库
+                                </SelectItem>
                                 {knowledgeBases.map((kb) => (
                                     <SelectItem key={kb.id} value={kb.id}>
                                       {kb.name} ({kb.collectionName})

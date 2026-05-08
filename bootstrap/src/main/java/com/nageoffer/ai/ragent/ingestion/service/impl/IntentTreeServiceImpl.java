@@ -169,6 +169,18 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
             throw new ServiceException("节点不存在或已删除: id=" + id);
         }
 
+        Integer nextLevel = req.getLevel() != null ? req.getLevel() : node.getLevel();
+        Integer currentKind = node.getKind() == null ? IntentKind.KB.getCode() : node.getKind();
+        Integer nextKind = req.getKind() != null ? req.getKind() : currentKind;
+        String nextKbId = req.getKbId() != null
+                ? (StrUtil.isBlank(req.getKbId()) ? null : req.getKbId().trim())
+                : node.getKbId();
+        if (Objects.equals(nextKind, IntentKind.KB.getCode())
+                && Objects.equals(nextLevel, IntentLevel.TOPIC.getCode())
+                && StrUtil.isBlank(nextKbId)) {
+            throw new ClientException("TOPIC级别的RAG检索节点必须指定目标知识库");
+        }
+
         if (req.getName() != null) {
             node.setName(req.getName());
         }
@@ -181,13 +193,6 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         if (req.getDescription() != null) {
             node.setDescription(req.getDescription());
         }
-        if (StrUtil.isNotBlank(req.getKbId())) {
-            node.setKbId(req.getKbId());
-            KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(req.getKbId());
-            node.setCollectionName(kb != null ? kb.getCollectionName() : null);
-        } else if (req.getCollectionName() != null) {
-            node.setCollectionName(req.getCollectionName());
-        }
         if (req.getExamples() != null) {
             node.setExamples(GSON.toJson(req.getExamples()));
         }
@@ -196,6 +201,36 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         }
         if (req.getKind() != null) {
             node.setKind(req.getKind());
+        }
+        if (Objects.equals(nextKind, IntentKind.KB.getCode())) {
+            if (req.getKbId() != null) {
+                if (StrUtil.isBlank(req.getKbId())) {
+                    node.setKbId(null);
+                    node.setCollectionName(null);
+                } else {
+                    KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(req.getKbId().trim());
+                    if (kb == null) {
+                        throw new ClientException("知识库不存在: " + req.getKbId());
+                    }
+                    node.setKbId(kb.getId());
+                    node.setCollectionName(kb.getCollectionName());
+                }
+            } else if (req.getCollectionName() != null) {
+                node.setCollectionName(req.getCollectionName());
+                if (StrUtil.isBlank(req.getCollectionName())) {
+                    node.setKbId(null);
+                }
+            }
+        } else {
+            node.setKbId(null);
+            node.setCollectionName(null);
+        }
+        if (Objects.equals(nextKind, IntentKind.MCP.getCode())) {
+            if (req.getMcpToolId() != null) {
+                node.setMcpToolId(req.getMcpToolId());
+            }
+        } else if (req.getKind() != null) {
+            node.setMcpToolId(null);
         }
         if (req.getSortOrder() != null) {
             node.setSortOrder(req.getSortOrder());
@@ -209,8 +244,10 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         if (req.getPromptTemplate() != null) {
             node.setPromptTemplate(req.getPromptTemplate());
         }
-        if (req.getParamPromptTemplate() != null) {
+        if (Objects.equals(nextKind, IntentKind.MCP.getCode()) && req.getParamPromptTemplate() != null) {
             node.setParamPromptTemplate(req.getParamPromptTemplate());
+        } else if (!Objects.equals(nextKind, IntentKind.MCP.getCode()) && req.getKind() != null) {
+            node.setParamPromptTemplate(null);
         }
         node.setUpdateBy(UserContext.getUsername());
         this.updateById(node);

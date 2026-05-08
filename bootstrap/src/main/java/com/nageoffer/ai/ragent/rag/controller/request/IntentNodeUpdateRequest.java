@@ -37,6 +37,7 @@ public class IntentNodeUpdateRequest {
     private List<String> examples;
     private String kbId;
     private String collectionName;
+    private String mcpToolId;
     private Integer topK;
     private Integer kind;
     private Integer sortOrder;

@@ -24,9 +24,12 @@ import {
   type IntentNodeTree,
   type IntentNodeUpdatePayload
 } from "@/services/intentTreeService";
+import type { KnowledgeBase } from "@/services/knowledgeService";
+import { getKnowledgeBases } from "@/services/knowledgeService";
 import { getErrorMessage } from "@/utils/error";
 
 const ROOT_PARENT = "__ROOT__";
+const NO_KB = "__NO_KB__";
 
 const LEVEL_OPTIONS = [
   { value: 0, label: "DOMAIN", description: "顶层领域" },
@@ -46,6 +49,7 @@ const formSchema = z.object({
   level: z.number(),
   kind: z.number(),
   parentCode: z.string().optional(),
+  kbId: z.string().optional(),
   collectionName: z.string().optional(),
   mcpToolId: z.string().optional(),
   description: z.string().optional(),
@@ -69,6 +73,7 @@ type FlatIntentNode = {
   parentCode?: string | null;
   description?: string | null;
   examples?: string | null;
+  kbId?: string | null;
   collectionName?: string | null;
   mcpToolId?: string | null;
   topK?: number | null;
@@ -113,6 +118,7 @@ const flattenIntentTree = (
       parentCode: node.parentCode,
       description: node.description,
       examples: node.examples,
+      kbId: node.kbId,
       collectionName: node.collectionName,
       mcpToolId: node.mcpToolId,
       topK: node.topK,
@@ -134,6 +140,7 @@ const emptyDefaults: FormValues = {
   level: 0,
   kind: 0,
   parentCode: ROOT_PARENT,
+  kbId: "",
   collectionName: "",
   mcpToolId: "",
   description: "",
@@ -151,6 +158,7 @@ export function IntentEditPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const [tree, setTree] = useState<IntentNodeTree[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -209,12 +217,14 @@ export function IntentEditPage() {
 
   const resolvedDefaults = useMemo<FormValues>(() => {
     if (!currentNode) return emptyDefaults;
+    const kbMatch = knowledgeBases.find((kb) => kb.collectionName === currentNode.collectionName);
     return {
       name: currentNode.name || "",
       intentCode: currentNode.intentCode || "",
       level: currentNode.level ?? 0,
       kind: currentNode.kind ?? 0,
       parentCode: currentNode.parentCode || ROOT_PARENT,
+      kbId: currentNode.kbId || kbMatch?.id || "",
       collectionName: currentNode.collectionName || "",
       mcpToolId: currentNode.mcpToolId || "",
       description: currentNode.description || "",
@@ -226,7 +236,7 @@ export function IntentEditPage() {
       promptTemplate: currentNode.promptTemplate || "",
       paramPromptTemplate: currentNode.paramPromptTemplate || ""
     };
-  }, [currentNode]);
+  }, [currentNode, knowledgeBases]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -234,11 +244,12 @@ export function IntentEditPage() {
   });
 
   useEffect(() => {
-    const loadTree = async () => {
+    const loadData = async () => {
       try {
         setLoading(true);
-        const data = await getIntentTree();
+        const [data, bases] = await Promise.all([getIntentTree(), getKnowledgeBases()]);
         setTree(data || []);
+        setKnowledgeBases(bases || []);
       } catch (error) {
         toast.error(getErrorMessage(error, "加载意图节点失败"));
         console.error(error);
@@ -246,7 +257,7 @@ export function IntentEditPage() {
         setLoading(false);
       }
     };
-    loadTree();
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -259,6 +270,10 @@ export function IntentEditPage() {
     if (!currentNode) return;
     if (values.kind === 2 && !values.mcpToolId?.trim()) {
       form.setError("mcpToolId", { message: "MCP节点必须填写工具ID" });
+      return;
+    }
+    if (values.kind === 0 && values.level === 2 && !values.kbId) {
+      form.setError("kbId", { message: "TOPIC 节点请选择知识库" });
       return;
     }
 
@@ -276,7 +291,8 @@ export function IntentEditPage() {
       parentCode,
       description: values.description?.trim() || "",
       examples,
-      collectionName: values.kind === 0 ? values.collectionName?.trim() || "" : "",
+      kbId: values.kind === 0 ? values.kbId || "" : undefined,
+      collectionName: undefined,
       mcpToolId: values.kind === 2 ? values.mcpToolId?.trim() || "" : "",
       kind: values.kind,
       topK: values.topK ?? undefined,
@@ -459,13 +475,30 @@ export function IntentEditPage() {
               {kind === 0 ? (
                 <FormField
                   control={form.control}
-                  name="collectionName"
+                  name="kbId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Collection 名称</FormLabel>
-                      <FormControl>
-                        <Input placeholder="向量数据库 Collection 名称" {...field} />
-                      </FormControl>
+                      <FormLabel>知识库{form.watch("level") === 2 ? "（必填）" : "（可选）"}</FormLabel>
+                      <Select
+                        value={field.value || NO_KB}
+                        onValueChange={(value) => field.onChange(value === NO_KB ? "" : value)}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="请选择知识库" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={NO_KB} disabled={form.watch("level") === 2}>
+                            不绑定知识库
+                          </SelectItem>
+                          {knowledgeBases.map((kb) => (
+                            <SelectItem key={kb.id} value={kb.id}>
+                              {kb.name} ({kb.collectionName})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
