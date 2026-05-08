@@ -505,7 +505,7 @@ function IntentNodeDialog({
         level: node.level ?? 0,
         kind: node.kind ?? 0,
         parentCode: node.parentCode || ROOT_PARENT,
-        kbId: "",
+        kbId: node.kbId || "",
         mcpToolId: node.mcpToolId || "",
         collectionName: node.collectionName || "",
         description: node.description || "",
@@ -615,7 +615,8 @@ function IntentNodeDialog({
           parentCode,
           description: values.description?.trim() || undefined,
           examples: examples.length > 0 ? examples : undefined,
-          collectionName: values.kind === 0 ? values.collectionName?.trim() || undefined : undefined,
+          kbId: values.kind === 0 ? values.kbId || undefined : undefined,
+          collectionName: undefined,
           mcpToolId: values.kind === 2 ? values.mcpToolId?.trim() || undefined : undefined,
           kind: values.kind,
           topK: values.topK ?? undefined,
@@ -763,7 +764,7 @@ function IntentNodeDialog({
                   )}
               />
 
-              {mode === "create" && kind === 0 && (
+              {kind === 0 && (
                   <FormField
                       control={form.control}
                       name="kbId"
@@ -784,22 +785,6 @@ function IntentNodeDialog({
                                 ))}
                               </SelectContent>
                             </Select>
-                            <FormMessage />
-                          </FormItem>
-                      )}
-                  />
-              )}
-
-              {mode === "edit" && kind === 0 && (
-                  <FormField
-                      control={form.control}
-                      name="collectionName"
-                      render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Collection 名称</FormLabel>
-                            <FormControl>
-                              <Input placeholder="向量数据库 Collection 名称" {...field} />
-                            </FormControl>
                             <FormMessage />
                           </FormItem>
                       )}

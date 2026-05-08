@@ -8,6 +8,7 @@ export interface IntentNodeTree {
   parentCode?: string | null;
   description?: string | null;
   examples?: string | null;
+  kbId?: string | null;
   collectionName?: string | null;
   mcpToolId?: string | null;
   topK?: number | null;
@@ -44,6 +45,7 @@ export interface IntentNodeUpdatePayload {
   parentCode?: string | null;
   description?: string | null;
   examples?: string[];
+  kbId?: string | null;
   collectionName?: string | null;
   mcpToolId?: string | null;
   topK?: number | null;

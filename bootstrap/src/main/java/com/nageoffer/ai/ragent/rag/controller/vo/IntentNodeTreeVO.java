@@ -37,6 +37,7 @@ public class IntentNodeTreeVO {
     private String parentCode;
     private String description;
     private String examples;
+    private String kbId;
     private String collectionName;
     private Integer topK;
     private Integer kind;

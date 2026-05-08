@@ -35,6 +35,7 @@ public class IntentNodeUpdateRequest {
     private String parentCode;
     private String description;
     private List<String> examples;
+    private String kbId;
     private String collectionName;
     private Integer topK;
     private Integer kind;

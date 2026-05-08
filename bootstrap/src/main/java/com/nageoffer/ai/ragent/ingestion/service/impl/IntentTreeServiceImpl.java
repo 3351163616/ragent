@@ -29,6 +29,7 @@ import com.nageoffer.ai.ragent.rag.controller.vo.IntentNodeTreeVO;
 import com.nageoffer.ai.ragent.rag.dao.entity.IntentNodeDO;
 import com.nageoffer.ai.ragent.rag.dao.mapper.IntentNodeMapper;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
+import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
 import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.rag.enums.IntentLevel;
 import com.nageoffer.ai.ragent.framework.context.UserContext;
@@ -180,11 +181,15 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         if (req.getDescription() != null) {
             node.setDescription(req.getDescription());
         }
+        if (StrUtil.isNotBlank(req.getKbId())) {
+            node.setKbId(req.getKbId());
+            KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(req.getKbId());
+            node.setCollectionName(kb != null ? kb.getCollectionName() : null);
+        } else if (req.getCollectionName() != null) {
+            node.setCollectionName(req.getCollectionName());
+        }
         if (req.getExamples() != null) {
             node.setExamples(GSON.toJson(req.getExamples()));
-        }
-        if (req.getCollectionName() != null) {
-            node.setCollectionName(req.getCollectionName());
         }
         if (req.getTopK() != null) {
             node.setTopK(normalizeTopK(req.getTopK()));

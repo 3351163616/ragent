@@ -37,6 +37,7 @@ build/
 .vscode/
 scripts/logs/
 data/
+dump.rdb
 
 ### Frontend ###
 node_modules/
