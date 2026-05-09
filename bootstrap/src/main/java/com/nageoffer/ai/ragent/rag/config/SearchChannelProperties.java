@@ -39,6 +39,11 @@ public class SearchChannelProperties {
      */
     private Channels channels = new Channels();
 
+    /**
+     * Rerank 后处理配置
+     */
+    private Rerank rerank = new Rerank();
+
     @Data
     public static class Channels {
 
@@ -78,6 +83,12 @@ public class SearchChannelProperties {
          * 全局检索时召回更多候选，后续通过 Rerank 筛选
          */
         private int topKMultiplier = 3;
+
+        /**
+         * 全局检索最低相似度分数
+         * 低于该分数的 Chunk 会被丢弃，避免无关问题硬召回文档
+         */
+        private double minScore = 0.55;
     }
 
     @Data
@@ -98,5 +109,15 @@ public class SearchChannelProperties {
          * TopK 倍数
          */
         private int topKMultiplier = 2;
+    }
+
+    @Data
+    public static class Rerank {
+
+        /**
+         * Rerank 后最低相关性分数
+         * 低于该分数的 Chunk 会被丢弃；<= 0 表示不启用过滤
+         */
+        private double minScore = 0.2;
     }
 }

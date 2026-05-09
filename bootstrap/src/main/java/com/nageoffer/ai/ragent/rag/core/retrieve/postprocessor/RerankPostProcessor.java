@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.rag.core.retrieve.postprocessor;
 
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.infra.rerank.RerankService;
+import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchChannelResult;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchContext;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ import java.util.List;
 public class RerankPostProcessor implements SearchResultPostProcessor {
 
     private final RerankService rerankService;
+    private final SearchChannelProperties properties;
 
     @Override
     public String getName() {
@@ -64,10 +66,32 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
             return chunks;
         }
 
-        return rerankService.rerank(
+        List<RetrievedChunk> reranked = rerankService.rerank(
                 context.getMainQuestion(),
                 chunks,
                 context.getTopK()
         );
+        return filterByMinScore(reranked);
+    }
+
+    private List<RetrievedChunk> filterByMinScore(List<RetrievedChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return List.of();
+        }
+
+        double minScore = properties.getRerank().getMinScore();
+        if (minScore <= 0) {
+            return chunks;
+        }
+
+        List<RetrievedChunk> filtered = chunks.stream()
+                .filter(chunk -> chunk.getScore() != null && chunk.getScore() >= minScore)
+                .toList();
+
+        if (filtered.size() != chunks.size()) {
+            log.info("Rerank 分数过滤完成，阈值：{}，输入：{}，输出：{}",
+                    minScore, chunks.size(), filtered.size());
+        }
+        return filtered;
     }
 }

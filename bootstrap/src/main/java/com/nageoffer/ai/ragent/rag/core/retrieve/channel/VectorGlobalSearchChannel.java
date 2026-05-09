@@ -127,15 +127,17 @@ public class VectorGlobalSearchChannel implements SearchChannel {
                     collections,
                     context.getTopK() * topKMultiplier
             );
+            List<RetrievedChunk> filteredChunks = filterByMinScore(allChunks);
 
             long latency = System.currentTimeMillis() - startTime;
 
-            log.info("向量全局检索完成，检索到 {} 个 Chunk，耗时 {}ms", allChunks.size(), latency);
+            log.info("向量全局检索完成，原始 {} 个 Chunk，过滤后 {} 个 Chunk，耗时 {}ms",
+                    allChunks.size(), filteredChunks.size(), latency);
 
             return SearchChannelResult.builder()
                     .channelType(SearchChannelType.VECTOR_GLOBAL)
                     .channelName(getName())
-                    .chunks(allChunks)
+                    .chunks(filteredChunks)
                     .latencyMs(latency)
                     .build();
 
@@ -180,6 +182,23 @@ public class VectorGlobalSearchChannel implements SearchChannel {
                                                             int topK) {
         // 使用模板方法执行并行检索
         return parallelRetriever.executeParallelRetrieval(question, collections, topK);
+    }
+
+    private List<RetrievedChunk> filterByMinScore(List<RetrievedChunk> chunks) {
+        double minScore = properties.getChannels().getVectorGlobal().getMinScore();
+        if (minScore <= 0 || CollUtil.isEmpty(chunks)) {
+            return chunks;
+        }
+
+        List<RetrievedChunk> filtered = chunks.stream()
+                .filter(chunk -> chunk.getScore() != null && chunk.getScore() >= minScore)
+                .toList();
+
+        if (filtered.size() != chunks.size()) {
+            log.info("全局检索分数过滤完成，阈值：{}，输入：{}，输出：{}",
+                    minScore, chunks.size(), filtered.size());
+        }
+        return filtered;
     }
 
     @Override
