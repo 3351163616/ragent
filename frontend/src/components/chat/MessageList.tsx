@@ -17,6 +17,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
   const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
   const scrollerRef = React.useRef<HTMLElement | null>(null);
   const lastSessionRef = React.useRef<string | null>(null);
+  const autoFollowRef = React.useRef(true);
   const pendingScrollRef = React.useRef(true);
   const settleTimerRef = React.useRef<number | null>(null);
   const heightScrollRafRef = React.useRef<number | null>(null);
@@ -32,18 +33,32 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     if (scroller) {
       scroller.scrollTop = scroller.scrollHeight;
     }
+    autoFollowRef.current = true;
   }, []);
 
   const stickToBottom = React.useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     scroller.scrollTop = scroller.scrollHeight;
+    autoFollowRef.current = true;
+  }, []);
+
+  const updateAutoFollow = React.useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    const atBottom = distanceFromBottom < 80;
+    autoFollowRef.current = atBottom;
+    if (!atBottom) {
+      pendingScrollRef.current = false;
+    }
   }, []);
 
   React.useEffect(() => {
     const nextKey = sessionKey ?? "empty";
     if (lastSessionRef.current !== nextKey) {
       lastSessionRef.current = nextKey;
+      autoFollowRef.current = true;
       pendingScrollRef.current = true;
       if (settleTimerRef.current) {
         window.clearTimeout(settleTimerRef.current);
@@ -56,11 +71,17 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
     if (!wasStreaming && isStreaming) {
+      if (!autoFollowRef.current && !pendingScrollRef.current) {
+        return;
+      }
       stickToBottom();
       const timer = window.setTimeout(stickToBottom, 120);
       return () => window.clearTimeout(timer);
     }
     if (wasStreaming && !isStreaming) {
+      if (!autoFollowRef.current && !pendingScrollRef.current) {
+        return;
+      }
       scrollToBottom();
       const timer = window.setTimeout(scrollToBottom, 120);
       const lateTimer = window.setTimeout(scrollToBottom, 360);
@@ -101,11 +122,11 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     }
     if (document.fonts?.ready) {
       document.fonts.ready.then(() => {
-      if (active) {
-        scrollToBottom();
-      }
-    });
-  }
+        if (active) {
+          scrollToBottom();
+        }
+      });
+    }
     if (settleTimerRef.current) {
       window.clearTimeout(settleTimerRef.current);
     }
@@ -124,10 +145,11 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
       }
       window.removeEventListener("load", handleLoad);
     };
-  }, [messages.length, isStreaming, isLoading, sessionKey]);
+  }, [messages.length, isStreaming, isLoading, sessionKey, scrollToBottom]);
 
   React.useEffect(() => {
     return () => {
+      scrollerRef.current?.removeEventListener("scroll", updateAutoFollow);
       if (heightScrollRafRef.current) {
         window.cancelAnimationFrame(heightScrollRafRef.current);
         heightScrollRafRef.current = null;
@@ -137,13 +159,13 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
         settleTimerRef.current = null;
       }
     };
-  }, []);
+  }, [updateAutoFollow]);
 
   const handleTotalListHeightChanged = React.useCallback(() => {
     if (isLoading) {
       return;
     }
-    const shouldStick = isStreaming || pendingScrollRef.current;
+    const shouldStick = pendingScrollRef.current || autoFollowRef.current;
     if (!shouldStick) return;
     if (heightScrollRafRef.current) {
       return;
@@ -151,10 +173,12 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     heightScrollRafRef.current = window.requestAnimationFrame(() => {
       heightScrollRafRef.current = null;
       if (isStreaming) {
-        stickToBottom();
-      } else {
-        scrollToBottom();
+        if (autoFollowRef.current || pendingScrollRef.current) {
+          stickToBottom();
+        }
+        return;
       }
+      scrollToBottom();
     });
   }, [isStreaming, isLoading, scrollToBottom, stickToBottom]);
 
@@ -214,8 +238,23 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
         if (isStreaming) return false;
         return atBottom ? "auto" : false;
       }}
+      atBottomStateChange={(atBottom) => {
+        if (atBottom) {
+          autoFollowRef.current = true;
+        }
+      }}
       scrollerRef={(node) => {
-        scrollerRef.current = node as HTMLElement | null;
+        const scroller = node as HTMLElement | null;
+        if (scrollerRef.current && scrollerRef.current !== scroller) {
+          scrollerRef.current.removeEventListener("scroll", updateAutoFollow);
+        }
+        if (scroller && scrollerRef.current !== scroller) {
+          scroller.addEventListener("scroll", updateAutoFollow, { passive: true });
+          scrollerRef.current = scroller;
+          updateAutoFollow();
+          return;
+        }
+        scrollerRef.current = scroller;
       }}
       totalListHeightChanged={handleTotalListHeightChanged}
       className="h-full"
