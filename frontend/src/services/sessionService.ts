@@ -32,3 +32,7 @@ export async function renameSession(conversationId: string, title: string) {
 export async function listMessages(conversationId: string) {
   return api.get<ConversationMessageVO[]>(`/conversations/${conversationId}/messages`);
 }
+
+export async function rollbackConversationFromMessage(conversationId: string, messageId: string) {
+  return api.delete<void>(`/conversations/${conversationId}/messages/${messageId}/rollback`);
+}

@@ -18,22 +18,27 @@
 package com.nageoffer.ai.ragent.rag.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationMessageVO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationDO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationMessageDO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationSummaryDO;
+import com.nageoffer.ai.ragent.rag.dao.entity.MessageFeedbackDO;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMessageMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationSummaryMapper;
+import com.nageoffer.ai.ragent.rag.dao.mapper.MessageFeedbackMapper;
 import com.nageoffer.ai.ragent.rag.enums.ConversationMessageOrder;
-import com.nageoffer.ai.ragent.rag.service.MessageFeedbackService;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
+import com.nageoffer.ai.ragent.rag.service.MessageFeedbackService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationMessageBO;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationSummaryBO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +52,7 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
     private final ConversationMessageMapper conversationMessageMapper;
     private final ConversationSummaryMapper conversationSummaryMapper;
     private final ConversationMapper conversationMapper;
+    private final MessageFeedbackMapper messageFeedbackMapper;
     private final MessageFeedbackService feedbackService;
 
     @Override
@@ -111,6 +117,65 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
         }
 
         return result;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void rollbackFromMessage(String conversationId, String userId, String messageId) {
+        if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId) || StrUtil.isBlank(messageId)) {
+            throw new ClientException("会话消息信息缺失");
+        }
+
+        ConversationMessageDO startMessage = conversationMessageMapper.selectOne(
+                Wrappers.lambdaQuery(ConversationMessageDO.class)
+                        .eq(ConversationMessageDO::getId, messageId)
+                        .eq(ConversationMessageDO::getConversationId, conversationId)
+                        .eq(ConversationMessageDO::getUserId, userId)
+                        .eq(ConversationMessageDO::getDeleted, 0)
+        );
+        if (startMessage == null) {
+            throw new ClientException("消息不存在");
+        }
+        if (!"user".equalsIgnoreCase(startMessage.getRole())) {
+            throw new ClientException("仅支持从用户消息开始回滚");
+        }
+
+        List<ConversationMessageDO> messagesToDelete = conversationMessageMapper.selectList(
+                Wrappers.lambdaQuery(ConversationMessageDO.class)
+                        .select(ConversationMessageDO::getId)
+                        .eq(ConversationMessageDO::getConversationId, conversationId)
+                        .eq(ConversationMessageDO::getUserId, userId)
+                        .eq(ConversationMessageDO::getDeleted, 0)
+                        .ge(ConversationMessageDO::getId, messageId)
+        );
+        if (CollUtil.isEmpty(messagesToDelete)) {
+            return;
+        }
+
+        List<String> messageIds = messagesToDelete.stream()
+                .map(ConversationMessageDO::getId)
+                .toList();
+
+        conversationMessageMapper.delete(
+                Wrappers.lambdaQuery(ConversationMessageDO.class)
+                        .eq(ConversationMessageDO::getConversationId, conversationId)
+                        .eq(ConversationMessageDO::getUserId, userId)
+                        .eq(ConversationMessageDO::getDeleted, 0)
+                        .in(ConversationMessageDO::getId, messageIds)
+        );
+        messageFeedbackMapper.delete(
+                Wrappers.lambdaQuery(MessageFeedbackDO.class)
+                        .eq(MessageFeedbackDO::getConversationId, conversationId)
+                        .eq(MessageFeedbackDO::getUserId, userId)
+                        .eq(MessageFeedbackDO::getDeleted, 0)
+                        .in(MessageFeedbackDO::getMessageId, messageIds)
+        );
+        conversationSummaryMapper.delete(
+                Wrappers.lambdaQuery(ConversationSummaryDO.class)
+                        .eq(ConversationSummaryDO::getConversationId, conversationId)
+                        .eq(ConversationSummaryDO::getUserId, userId)
+                        .eq(ConversationSummaryDO::getDeleted, 0)
+        );
     }
 
     @Override

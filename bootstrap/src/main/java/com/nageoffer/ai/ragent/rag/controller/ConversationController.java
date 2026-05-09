@@ -81,4 +81,14 @@ public class ConversationController {
     public Result<List<ConversationMessageVO>> listMessages(@PathVariable String conversationId) {
         return Results.success(conversationMessageService.listMessages(conversationId, UserContext.getUserId(), null, ConversationMessageOrder.ASC));
     }
+
+    /**
+     * 从指定用户消息开始回滚会话消息
+     */
+    @DeleteMapping("/conversations/{conversationId}/messages/{messageId}/rollback")
+    public Result<Void> rollbackFromMessage(@PathVariable String conversationId,
+                                            @PathVariable String messageId) {
+        conversationMessageService.rollbackFromMessage(conversationId, UserContext.getUserId(), messageId);
+        return Results.success();
+    }
 }

@@ -1,10 +1,13 @@
 import * as React from "react";
-import { Brain, ChevronDown } from "lucide-react";
+import { Brain, ChevronDown, Copy, PencilLine } from "lucide-react";
+import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { cn } from "@/lib/utils";
+import { useChatStore } from "@/stores/chatStore";
 import type { Message } from "@/types";
 
 interface MessageItemProps {
@@ -14,6 +17,9 @@ interface MessageItemProps {
 
 export const MessageItem = React.memo(function MessageItem({ message, isLast }: MessageItemProps) {
   const isUser = message.role === "user";
+  const beginEditingMessage = useChatStore((state) => state.beginEditingMessage);
+  const isLoading = useChatStore((state) => state.isLoading);
+  const isStreaming = useChatStore((state) => state.isStreaming);
   const showFeedback =
     message.role === "assistant" &&
     message.status !== "streaming" &&
@@ -24,12 +30,47 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const hasThinking = Boolean(message.thinking && message.thinking.trim().length > 0);
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
+  const disableUserActions = isLoading || isStreaming;
+
+  const handleCopyUserMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      toast.success("复制成功");
+    } catch {
+      toast.error("复制失败");
+    }
+  };
 
   if (isUser) {
     return (
-      <div className="flex">
+      <div className="group/user flex flex-col items-end gap-1">
         <div className="user-message">
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        </div>
+        <div className="mr-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 focus-within:opacity-100">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleCopyUserMessage}
+            title="复制"
+            aria-label="复制用户消息"
+            className="h-7 w-7 text-[#999999] hover:bg-[#F5F5F5] hover:text-[#666666] focus-visible:ring-[#BFDBFE]"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => beginEditingMessage(message.id, message.content)}
+            disabled={disableUserActions}
+            title="编辑"
+            aria-label="编辑历史消息"
+            className="h-7 w-7 text-[#999999] hover:bg-[#F5F5F5] hover:text-[#2563EB] focus-visible:ring-[#BFDBFE]"
+          >
+            <PencilLine className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
     );

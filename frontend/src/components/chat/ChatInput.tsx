@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Brain, Lightbulb, Send, Square } from "lucide-react";
+import { Brain, Lightbulb, Send, Square, X } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,11 @@ export function ChatInput() {
     cancelGeneration,
     deepThinkingEnabled,
     setDeepThinkingEnabled,
-    inputFocusKey
+    inputFocusKey,
+    editingMessageId,
+    editingMessageContent,
+    clearEditingMessage,
+    resendEditedMessage
   } = useChatStore();
 
   const focusInput = React.useCallback(() => {
@@ -43,6 +47,15 @@ export function ChatInput() {
     focusInput();
   }, [inputFocusKey, focusInput]);
 
+  React.useEffect(() => {
+    if (!editingMessageId) return;
+    setValue(editingMessageContent);
+    window.requestAnimationFrame(() => {
+      adjustHeight();
+      focusInput();
+    });
+  }, [editingMessageId, editingMessageContent, adjustHeight, focusInput]);
+
   const handleSubmit = async () => {
     if (isStreaming) {
       cancelGeneration();
@@ -53,11 +66,19 @@ export function ChatInput() {
     const next = value;
     setValue("");
     focusInput();
-    await sendMessage(next);
+    if (editingMessageId) {
+      const submitted = await resendEditedMessage(next);
+      if (!submitted) {
+        setValue(next);
+      }
+    } else {
+      await sendMessage(next);
+    }
     focusInput();
   };
 
   const hasContent = value.trim().length > 0;
+  const isEditing = Boolean(editingMessageId);
 
   return (
     <div className="space-y-4">
@@ -88,7 +109,11 @@ export function ChatInput() {
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 const nativeEvent = event.nativeEvent as KeyboardEvent;
-                if (nativeEvent.isComposing || isComposingRef.current || nativeEvent.keyCode === 229) {
+                if (
+                  nativeEvent.isComposing ||
+                  isComposingRef.current ||
+                  nativeEvent.keyCode === 229
+                ) {
                   return;
                 }
                 event.preventDefault();
@@ -99,18 +124,35 @@ export function ChatInput() {
           />
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[10px] bg-gradient-to-b from-white/0 via-white/40 to-white/90" />
         </div>
+        {isEditing ? (
+          <div className="mt-2 flex items-center gap-2 rounded-xl bg-[#EFF6FF] px-3 py-2 text-xs text-[#2563EB]">
+            <span className="min-w-0 flex-1 truncate">正在编辑历史消息</span>
+            <button
+              type="button"
+              onClick={() => {
+                clearEditingMessage();
+                setValue("");
+                focusInput();
+              }}
+              className="rounded-full p-1 text-[#3B82F6] transition-colors hover:bg-[#DBEAFE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              aria-label="取消编辑"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         <div className="relative mt-2 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-            disabled={isStreaming}
+            disabled={isStreaming || isEditing}
             aria-pressed={deepThinkingEnabled}
             className={cn(
               "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
               deepThinkingEnabled
                 ? "border-[#BFDBFE] bg-[#DBEAFE] text-[#2563EB]"
                 : "border-transparent bg-[#F5F5F5] text-[#999999] hover:bg-[#EEEEEE]",
-              isStreaming && "cursor-not-allowed opacity-60"
+              (isStreaming || isEditing) && "cursor-not-allowed opacity-60"
             )}
           >
             <span className="inline-flex items-center gap-2">
@@ -121,7 +163,7 @@ export function ChatInput() {
               ) : null}
             </span>
           </button>
-          <ModelSelector disabled={isStreaming} />
+          <ModelSelector disabled={isStreaming || isEditing} />
           <button
             type="button"
             onClick={handleSubmit}
@@ -151,10 +193,7 @@ export function ChatInput() {
       <p className="text-center text-xs text-[#999999]">
         <kbd className="rounded bg-[#F5F5F5] px-1.5 py-0.5 text-[#666666]">Enter</kbd> 发送
         <span className="px-1.5">·</span>
-        <kbd className="rounded bg-[#F5F5F5] px-1.5 py-0.5 text-[#666666]">
-          Shift + Enter
-        </kbd>{" "}
-        换行
+        <kbd className="rounded bg-[#F5F5F5] px-1.5 py-0.5 text-[#666666]">Shift + Enter</kbd> 换行
         {isStreaming ? <span className="ml-2 animate-pulse-soft">生成中...</span> : null}
       </p>
     </div>

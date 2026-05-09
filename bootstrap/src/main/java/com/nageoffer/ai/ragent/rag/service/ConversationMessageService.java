@@ -45,6 +45,15 @@ public interface ConversationMessageService {
     List<ConversationMessageVO> listMessages(String conversationId, String userId, Integer limit, ConversationMessageOrder order);
 
     /**
+     * 从指定用户消息开始回滚会话消息，用于编辑历史问题后重新生成后续对话。
+     *
+     * @param conversationId 会话 ID
+     * @param userId         用户 ID
+     * @param messageId      作为回滚起点的用户消息 ID
+     */
+    void rollbackFromMessage(String conversationId, String userId, String messageId);
+
+    /**
      * 添加对话摘要
      *
      * @param conversationSummary 对话摘要内容

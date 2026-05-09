@@ -1,12 +1,20 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import type { CompletionPayload, FeedbackValue, Message, MessageDeltaPayload, Session } from "@/types";
+import type {
+  CompletionPayload,
+  FeedbackValue,
+  Message,
+  MessageDeltaPayload,
+  Session
+} from "@/types";
 import {
   listMessages,
   listSessions,
   deleteSession as deleteSessionRequest,
-  renameSession as renameSessionRequest
+  renameSession as renameSessionRequest,
+  rollbackConversationFromMessage,
+  type ConversationMessageVO
 } from "@/services/sessionService";
 import { stopTask, submitFeedback } from "@/services/chatService";
 import { buildQuery } from "@/utils/helpers";
@@ -29,14 +37,20 @@ interface ChatState {
   streamAbort: (() => void) | null;
   streamingMessageId: string | null;
   cancelRequested: boolean;
+  editingMessageId: string | null;
+  editingMessageContent: string;
   fetchSessions: () => Promise<void>;
   createSession: () => Promise<string>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
+  refreshCurrentMessages: () => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => void;
   setDeepThinkingEnabled: (enabled: boolean) => void;
   setSelectedModelId: (id: string | null) => void;
+  beginEditingMessage: (messageId: string, content: string) => void;
+  clearEditingMessage: () => void;
+  resendEditedMessage: (content: string) => Promise<boolean>;
   sendMessage: (content: string) => Promise<void>;
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
@@ -71,6 +85,20 @@ function computeThinkingDuration(startAt?: number | null) {
   return Math.max(1, seconds);
 }
 
+function mapMessages(data: ConversationMessageVO[]): Message[] {
+  return data.map((item) => ({
+    id: String(item.id),
+    role: item.role === "assistant" ? "assistant" : "user",
+    content: item.content,
+    thinking: item.thinkingContent || undefined,
+    thinkingDuration: item.thinkingDuration || undefined,
+    isDeepThinking: Boolean(item.thinkingContent),
+    createdAt: item.createTime,
+    feedback: mapVoteToFeedback(item.vote),
+    status: "done"
+  }));
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -89,15 +117,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamAbort: null,
   streamingMessageId: null,
   cancelRequested: false,
+  editingMessageId: null,
+  editingMessageContent: "",
   fetchSessions: async () => {
     set({ isLoading: true });
     try {
       const data = await listSessions();
       const sessions = data
         .map((item) => ({
-        id: item.conversationId,
-        title: item.title || "新对话",
-        lastTime: item.lastTime
+          id: item.conversationId,
+          title: item.title || "新对话",
+          lastTime: item.lastTime
         }))
         .sort((a, b) => {
           const timeA = a.lastTime ? new Date(a.lastTime).getTime() : 0;
@@ -118,7 +148,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isCreatingNew: true,
         isLoading: false,
         thinkingStartAt: null,
-        deepThinkingEnabled: false
+        deepThinkingEnabled: false,
+        editingMessageId: null,
+        editingMessageContent: ""
       });
       return "";
     }
@@ -136,7 +168,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamTaskId: null,
       streamAbort: null,
       streamingMessageId: null,
-      cancelRequested: false
+      cancelRequested: false,
+      editingMessageId: null,
+      editingMessageContent: ""
     });
     return "";
   },
@@ -146,7 +180,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((state) => ({
         sessions: state.sessions.filter((session) => session.id !== sessionId),
         messages: state.currentSessionId === sessionId ? [] : state.messages,
-        currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId
+        currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
+        editingMessageId: state.currentSessionId === sessionId ? null : state.editingMessageId,
+        editingMessageContent:
+          state.currentSessionId === sessionId ? "" : state.editingMessageContent
       }));
       toast.success("删除成功");
     } catch (error) {
@@ -178,25 +215,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isLoading: true,
       currentSessionId: sessionId,
       isCreatingNew: false,
-      thinkingStartAt: null
+      thinkingStartAt: null,
+      editingMessageId: null,
+      editingMessageContent: ""
     });
     try {
       const data = await listMessages(sessionId);
       if (get().currentSessionId !== sessionId) {
         return;
       }
-      const mapped: Message[] = data.map((item) => ({
-        id: String(item.id),
-        role: item.role === "assistant" ? "assistant" : "user",
-        content: item.content,
-        thinking: item.thinkingContent || undefined,
-        thinkingDuration: item.thinkingDuration || undefined,
-        isDeepThinking: Boolean(item.thinkingContent),
-        createdAt: item.createTime,
-        feedback: mapVoteToFeedback(item.vote),
-        status: "done"
-      }));
-      set({ messages: mapped });
+      set({ messages: mapMessages(data) });
     } catch (error) {
       toast.error((error as Error).message || "加载消息失败");
     } finally {
@@ -214,6 +242,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     }
   },
+  refreshCurrentMessages: async () => {
+    const sessionId = get().currentSessionId;
+    if (!sessionId || get().isStreaming) return;
+    try {
+      const data = await listMessages(sessionId);
+      if (get().currentSessionId !== sessionId || get().isStreaming) {
+        return;
+      }
+      set({ messages: mapMessages(data) });
+    } catch {
+      // 消息 ID 同步失败不影响当前对话展示。
+    }
+  },
   updateSessionTitle: (sessionId, title) => {
     set((state) => ({
       sessions: state.sessions.map((session) =>
@@ -226,6 +267,66 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   setSelectedModelId: (id) => {
     set({ selectedModelId: id });
+  },
+  beginEditingMessage: (messageId, content) => {
+    const state = get();
+    if (state.isStreaming || state.isLoading) {
+      toast.info("当前对话还在生成中，请稍后再编辑");
+      return;
+    }
+    if (messageId.startsWith("user-")) {
+      toast.info("消息正在同步，请稍后再试");
+      get()
+        .refreshCurrentMessages()
+        .catch(() => null);
+      return;
+    }
+    set({
+      editingMessageId: messageId,
+      editingMessageContent: content,
+      inputFocusKey: Date.now()
+    });
+  },
+  clearEditingMessage: () => {
+    set({
+      editingMessageId: null,
+      editingMessageContent: "",
+      inputFocusKey: Date.now()
+    });
+  },
+  resendEditedMessage: async (content) => {
+    const trimmed = content.trim();
+    const state = get();
+    if (!trimmed || state.isStreaming || state.isLoading) return false;
+    const messageId = state.editingMessageId;
+    const conversationId = state.currentSessionId;
+    if (!messageId || !conversationId) return false;
+    const messageIndex = state.messages.findIndex((message) => message.id === messageId);
+    if (messageIndex < 0 || state.messages[messageIndex]?.role !== "user") {
+      toast.error("未找到要编辑的历史消息");
+      set({ editingMessageId: null, editingMessageContent: "" });
+      return false;
+    }
+
+    try {
+      await rollbackConversationFromMessage(conversationId, messageId);
+      if (get().currentSessionId !== conversationId || get().editingMessageId !== messageId) {
+        return false;
+      }
+      set((latest) => {
+        const latestIndex = latest.messages.findIndex((message) => message.id === messageId);
+        return {
+          messages: latestIndex >= 0 ? latest.messages.slice(0, latestIndex) : latest.messages,
+          editingMessageId: null,
+          editingMessageContent: ""
+        };
+      });
+      await get().sendMessage(trimmed);
+      return true;
+    } catch (error) {
+      toast.error((error as Error).message || "回溯历史消息失败");
+      return false;
+    }
   },
   sendMessage: async (content) => {
     const trimmed = content.trim();
@@ -369,9 +470,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           messages: state.messages.map((message) => {
             if (message.id !== state.streamingMessageId) return message;
-            const suffix = message.content.includes("（已停止生成）")
-              ? ""
-              : "\n\n（已停止生成）";
+            const suffix = message.content.includes("（已停止生成）") ? "" : "\n\n（已停止生成）";
             const nextId = payload?.messageId ? String(payload.messageId) : message.id;
             return {
               ...message,
@@ -390,6 +489,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           streamingMessageId: null,
           cancelRequested: false
         }));
+        get()
+          .refreshCurrentMessages()
+          .catch(() => null);
       },
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
@@ -401,6 +503,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           streamingMessageId: null,
           cancelRequested: false
         });
+        get()
+          .refreshCurrentMessages()
+          .catch(() => null);
       },
       onTitle: (payload: { title: string }) => {
         if (get().streamingMessageId !== assistantId) return;
@@ -485,7 +590,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             content: message.content + delta,
             isThinking: shouldFinalizeThinking ? false : message.isThinking,
             thinkingDuration:
-              shouldFinalizeThinking && !message.thinkingDuration ? duration : message.thinkingDuration
+              shouldFinalizeThinking && !message.thinkingDuration
+                ? duration
+                : message.thinkingDuration
           };
         })
       };
