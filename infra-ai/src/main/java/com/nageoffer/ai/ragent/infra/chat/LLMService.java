@@ -64,6 +64,7 @@ public interface LLMService {
      */
     default String chat(String prompt) {
         ChatRequest req = ChatRequest.builder()
+                .scene("simple-chat")
                 .messages(List.of(ChatMessage.user(prompt)))
                 .build();
         return chat(req);
@@ -114,6 +115,7 @@ public interface LLMService {
      */
     default StreamCancellationHandle streamChat(String prompt, StreamCallback callback) {
         ChatRequest req = ChatRequest.builder()
+                .scene("simple-stream-chat")
                 .messages(List.of(ChatMessage.user(prompt)))
                 .build();
         return streamChat(req, callback);

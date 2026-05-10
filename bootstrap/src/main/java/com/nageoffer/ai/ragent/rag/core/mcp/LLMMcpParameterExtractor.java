@@ -89,6 +89,7 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
         try {
             // 调用 LLM 提取参数
             ChatRequest request = ChatRequest.builder()
+                    .scene("mcp-parameter-extract")
                     .messages(messages)
                     .temperature(0.1D)
                     .topP(0.3D)

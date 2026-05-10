@@ -200,6 +200,7 @@ public class ConversationServiceImpl implements ConversationService {
 
         try {
             ChatRequest request = ChatRequest.builder()
+                    .scene("conversation-title")
                     .messages(List.of(ChatMessage.user(prompt)))
                     .temperature(0.7D)
                     .topP(0.3D)

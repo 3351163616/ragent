@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.infra.chat;
 
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import okhttp3.OkHttpClient;
@@ -42,8 +43,9 @@ public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
     public GenericOpenAIChatClient(String providerName,
                                    OkHttpClient syncHttpClient,
                                    OkHttpClient streamingHttpClient,
-                                   Executor modelStreamExecutor) {
-        super(syncHttpClient, streamingHttpClient, modelStreamExecutor);
+                                   Executor modelStreamExecutor,
+                                   LLMRequestLogger requestLogger) {
+        super(syncHttpClient, streamingHttpClient, modelStreamExecutor, requestLogger);
         this.providerName = providerName;
     }
 

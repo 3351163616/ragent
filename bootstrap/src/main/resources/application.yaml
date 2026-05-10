@@ -107,6 +107,12 @@ rag:
     max-error-length: 1000
 
 ai:
+  llm-request-log:
+    enabled: false
+    directory: logs/llm-requests
+    include-headers: true
+    pretty-print: true
+
   providers:
     newapi:
       url: ${NEWAPI_BASE_URL:http://127.0.0.1:3000}

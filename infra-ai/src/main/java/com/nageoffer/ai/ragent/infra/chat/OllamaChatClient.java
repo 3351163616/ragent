@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.infra.chat;
 
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
 import com.nageoffer.ai.ragent.infra.enums.ModelProvider;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import lombok.extern.slf4j.Slf4j;
@@ -33,8 +34,9 @@ public class OllamaChatClient extends AbstractOpenAIStyleChatClient {
 
     public OllamaChatClient(OkHttpClient syncHttpClient,
                             OkHttpClient streamingHttpClient,
-                            Executor modelStreamExecutor) {
-        super(syncHttpClient, streamingHttpClient, modelStreamExecutor);
+                            Executor modelStreamExecutor,
+                            LLMRequestLogger requestLogger) {
+        super(syncHttpClient, streamingHttpClient, modelStreamExecutor, requestLogger);
     }
 
     @Override

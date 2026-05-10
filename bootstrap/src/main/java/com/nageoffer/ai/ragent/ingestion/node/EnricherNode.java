@@ -90,6 +90,7 @@ public class EnricherNode implements IngestionNode {
                         : EnricherPromptManager.systemPrompt(type);
                 String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), chunk, context);
                 ChatRequest request = ChatRequest.builder()
+                        .scene("ingestion-enrich")
                         .messages(List.of(
                                 ChatMessage.system(systemPrompt == null ? "" : systemPrompt),
                                 ChatMessage.user(userPrompt)

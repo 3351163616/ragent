@@ -233,6 +233,7 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
         String systemPrompt = buildPrompt(data.leafNodes);
         // 使用低温度和低 topP 保证分类结果的确定性和可复现性
         ChatRequest request = ChatRequest.builder()
+                .scene("intent-classify")
                 .messages(List.of(
                         ChatMessage.system(systemPrompt),
                         ChatMessage.user(question)

@@ -65,6 +65,7 @@ public class AmbiguityLLMChecker {
         );
 
         ChatRequest request = ChatRequest.builder()
+                .scene("ambiguity-check")
                 .messages(List.of(
                         ChatMessage.user(prompt)
                 ))

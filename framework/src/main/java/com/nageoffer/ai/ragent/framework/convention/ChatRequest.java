@@ -24,7 +24,9 @@ import lombok.NoArgsConstructor;
 import lombok.Builder.Default;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通用大模型请求对象
@@ -59,6 +61,24 @@ public class ChatRequest {
      */
     @Default
     private List<ChatMessage> messages = new ArrayList<>();
+
+    /**
+     * 本次 LLM 调用所属业务场景
+     * <p>
+     * 例如：intent-classify、query-rewrite-split、rag-stream-chat 等。
+     * 用于请求审计日志和链路排查，不参与模型请求体构造。
+     * </p>
+     */
+    private String scene;
+
+    /**
+     * 本次 LLM 调用的扩展元数据
+     * <p>
+     * 用于请求审计日志补充业务上下文，不参与模型请求体构造。
+     * </p>
+     */
+    @Default
+    private Map<String, Object> metadata = new LinkedHashMap<>();
 
     // ================== 模型控制参数 ==================
 

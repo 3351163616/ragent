@@ -24,6 +24,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.enums.ModelCapability;
 import com.nageoffer.ai.ragent.infra.http.AnthropicStyleSseParser;
@@ -59,14 +60,17 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
     protected final OkHttpClient syncHttpClient;
     protected final OkHttpClient streamingHttpClient;
     protected final Executor modelStreamExecutor;
+    protected final LLMRequestLogger requestLogger;
     protected final Gson gson = new Gson();
 
     protected AbstractAnthropicStyleChatClient(OkHttpClient syncHttpClient,
                                                OkHttpClient streamingHttpClient,
-                                               Executor modelStreamExecutor) {
+                                               Executor modelStreamExecutor,
+                                               LLMRequestLogger requestLogger) {
         this.syncHttpClient = syncHttpClient;
         this.streamingHttpClient = streamingHttpClient;
         this.modelStreamExecutor = modelStreamExecutor;
+        this.requestLogger = requestLogger;
     }
 
     protected String doChat(ChatRequest request, ModelTarget target) {
@@ -76,6 +80,7 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
         Request httpRequest = newAuthorizedRequest(provider, target)
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .build();
+        requestLogger.logChatRequest(request, target, httpRequest, reqBody, false);
 
         JsonObject respJson;
         try (Response response = syncHttpClient.newCall(httpRequest).execute()) {
@@ -106,6 +111,7 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .addHeader("Accept", "text/event-stream")
                 .build();
+        requestLogger.logChatRequest(request, target, streamRequest, reqBody, true);
 
         Call call = streamingHttpClient.newCall(streamRequest);
         return StreamAsyncExecutor.submit(

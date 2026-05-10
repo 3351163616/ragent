@@ -83,6 +83,7 @@ public class EnhancerNode implements IngestionNode {
             String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), input, context);
 
             ChatRequest request = ChatRequest.builder()
+                    .scene("ingestion-enhance")
                     .messages(List.of(
                             ChatMessage.system(systemPrompt == null ? "" : systemPrompt),
                             ChatMessage.user(userPrompt)

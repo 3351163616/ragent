@@ -25,6 +25,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.enums.ModelCapability;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
 import com.nageoffer.ai.ragent.infra.http.HttpMediaTypes;
 import com.nageoffer.ai.ragent.infra.http.HttpResponseHelper;
 import com.nageoffer.ai.ragent.infra.http.ModelClientErrorType;
@@ -54,14 +55,17 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
     protected final OkHttpClient syncHttpClient;
     protected final OkHttpClient streamingHttpClient;
     protected final Executor modelStreamExecutor;
+    protected final LLMRequestLogger requestLogger;
     protected final Gson gson = new Gson();
 
     protected AbstractOpenAIStyleChatClient(OkHttpClient syncHttpClient,
                                             OkHttpClient streamingHttpClient,
-                                            Executor modelStreamExecutor) {
+                                            Executor modelStreamExecutor,
+                                            LLMRequestLogger requestLogger) {
         this.syncHttpClient = syncHttpClient;
         this.streamingHttpClient = streamingHttpClient;
         this.modelStreamExecutor = modelStreamExecutor;
+        this.requestLogger = requestLogger;
     }
 
     // ==================== 子类钩子方法 ====================
@@ -109,6 +113,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
         Request requestHttp = newAuthorizedRequest(provider, target)
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .build();
+        requestLogger.logChatRequest(request, target, requestHttp, reqBody, false);
 
         JsonObject respJson;
         try (Response response = syncHttpClient.newCall(requestHttp).execute()) {
@@ -144,6 +149,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .addHeader("Accept", "text/event-stream")
                 .build();
+        requestLogger.logChatRequest(request, target, streamRequest, reqBody, true);
 
         Call call = streamingHttpClient.newCall(streamRequest);
         boolean reasoningEnabled = isReasoningEnabledForStream(request);

@@ -93,6 +93,7 @@ public class ChatClientRegistrar implements BeanDefinitionRegistryPostProcessor,
                     .addConstructorArgReference("syncHttpClient")
                     .addConstructorArgReference("streamingHttpClient")
                     .addConstructorArgReference("modelStreamExecutor")
+                    .addConstructorArgReference("llmRequestLogger")
                     .getBeanDefinition();
 
             registry.registerBeanDefinition("chatClient-" + providerName, beanDef);

@@ -334,6 +334,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         ));
 
         ChatRequest request = ChatRequest.builder()
+                .scene("conversation-summary")
                 .messages(summaryMessages)
                 .temperature(0.3D)   // 低温度确保摘要准确稳定
                 .topP(0.9D)

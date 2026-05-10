@@ -254,6 +254,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         messages.add(ChatMessage.user(userMsg.toString()));
 
         return ChatRequest.builder()
+                .scene("query-rewrite-split")
                 .messages(messages)
                 .temperature(0.1D)
                 .topP(0.3D)

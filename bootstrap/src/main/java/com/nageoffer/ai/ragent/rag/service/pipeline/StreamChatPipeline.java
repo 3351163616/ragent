@@ -207,6 +207,7 @@ public class StreamChatPipeline {
         messages.add(ChatMessage.user(question));
 
         ChatRequest req = ChatRequest.builder()
+                .scene("system-stream-chat")
                 .messages(messages)
                 .temperature(0.7D)
                 .thinking(false)
@@ -234,6 +235,7 @@ public class StreamChatPipeline {
                 rewriteResult.subQuestions()  // 传入子问题列表
         );
         ChatRequest chatRequest = ChatRequest.builder()
+                .scene("rag-stream-chat")
                 .messages(messages)
                 .thinking(deepThinking)
                 .temperature(ctx.hasMcp() ? 0.3D : 0D)  // MCP 场景稍微放宽温度

@@ -36,6 +36,7 @@ build/
 ### VS Code ###
 .vscode/
 scripts/logs/
+logs/llm-requests/
 prompts/
 data/
 dump.rdb
