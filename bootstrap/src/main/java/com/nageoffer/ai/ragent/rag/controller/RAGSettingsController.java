@@ -141,6 +141,9 @@ public class RAGSettingsController {
             props.getProviders().forEach((k, v) -> providers.put(k, AISettings.ProviderConfig.builder()
                     .url(v.getUrl())
                     .apiKey(maskApiKey(v.getApiKey()))
+                    .format(v.getFormat())
+                    .thinkingParameter(v.getThinkingParameter())
+                    .reasoningEffort(v.getReasoningEffort())
                     .endpoints(v.getEndpoints())
                     .build()));
         }
@@ -205,6 +208,15 @@ public class RAGSettingsController {
             AIModelProperties.ProviderConfig config = new AIModelProperties.ProviderConfig();
             config.setUrl(provider.getUrl().trim());
             config.setApiKey(provider.getApiKey());
+            if (provider.getFormat() != null && !provider.getFormat().isBlank()) {
+                config.setFormat(provider.getFormat().trim());
+            }
+            if (provider.getThinkingParameter() != null && !provider.getThinkingParameter().isBlank()) {
+                config.setThinkingParameter(provider.getThinkingParameter().trim());
+            }
+            if (provider.getReasoningEffort() != null && !provider.getReasoningEffort().isBlank()) {
+                config.setReasoningEffort(provider.getReasoningEffort().trim());
+            }
             config.setEndpoints(copyEndpoints(name, provider.getEndpoints()));
             result.put(name.trim(), config);
         });

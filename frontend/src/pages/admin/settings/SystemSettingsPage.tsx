@@ -326,6 +326,10 @@ export function SystemSettingsPage() {
     }
 
     const nextProviders: AIProviders = { ...(settings.ai.providers || {}) };
+    const previousProvider =
+      providerDialog.mode === "edit" && providerDialog.originalName
+        ? nextProviders[providerDialog.originalName]
+        : undefined;
     if (
       providerDialog.mode === "edit" &&
       providerDialog.originalName &&
@@ -334,6 +338,7 @@ export function SystemSettingsPage() {
       delete nextProviders[providerDialog.originalName];
     }
     nextProviders[name] = {
+      ...previousProvider,
       url,
       apiKey: providerForm.apiKey,
       endpoints

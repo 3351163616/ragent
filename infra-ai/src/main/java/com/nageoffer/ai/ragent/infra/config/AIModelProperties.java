@@ -159,6 +159,17 @@ public class AIModelProperties {
         private String format = "openai";
 
         /**
+         * OpenAI 兼容协议下，开启思考模式时使用的请求参数：
+         * enable_thinking | reasoning_effort | none
+         */
+        private String thinkingParameter = "enable_thinking";
+
+        /**
+         * thinkingParameter=reasoning_effort 时发送的努力程度
+         */
+        private String reasoningEffort = "medium";
+
+        /**
          * 端点映射配置
          * key: 端点类型，value: 端点路径
          */

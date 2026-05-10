@@ -95,6 +95,9 @@ public class SystemSettingsVO {
         public static class ProviderConfig {
             private String url;
             private String apiKey;
+            private String format;
+            private String thinkingParameter;
+            private String reasoningEffort;
             private Map<String, String> endpoints;
         }
 

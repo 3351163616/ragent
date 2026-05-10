@@ -102,6 +102,15 @@ public class AIProviderConfigService {
             AIModelProperties.ProviderConfig config = new AIModelProperties.ProviderConfig();
             config.setUrl(provider.getUrl().trim());
             config.setApiKey(provider.getApiKey());
+            if (provider.getFormat() != null && !provider.getFormat().isBlank()) {
+                config.setFormat(provider.getFormat().trim());
+            }
+            if (provider.getThinkingParameter() != null && !provider.getThinkingParameter().isBlank()) {
+                config.setThinkingParameter(provider.getThinkingParameter().trim());
+            }
+            if (provider.getReasoningEffort() != null && !provider.getReasoningEffort().isBlank()) {
+                config.setReasoningEffort(provider.getReasoningEffort().trim());
+            }
             config.setEndpoints(copyEndpoints(name, provider.getEndpoints()));
             result.put(name.trim(), config);
         });

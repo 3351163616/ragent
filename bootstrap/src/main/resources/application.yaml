@@ -124,10 +124,18 @@ ai:
         chat: /v1/chat/completions
     glm:
       url: http://43.139.76.84:8082
-      api-key: ${ZHIPU_API_KEY}
+      api-key: ${ZHIPU_API_KEY:}
       format: anthropic
       endpoints:
         chat: /v1/messages
+    gpt55:
+      url: ${GPT55_BASE_URL:}
+      api-key: ${GPT55_API_KEY:}
+      format: openai
+      thinking-parameter: reasoning_effort
+      reasoning-effort: medium
+      endpoints:
+        chat: /v1/chat/completions
 
   selection:
     failure-threshold: 2
@@ -140,21 +148,26 @@ ai:
     default-model: claude-opus
     deep-thinking-model: claude-opus
     candidates:
+      - id: gpt-5.5
+        provider: gpt55
+        model: gpt-5.5
+        supports-thinking: true
+        priority: 0
       - id: claude-opus
         provider: moyu
         model: claude-opus-4-7
         supports-thinking: true
-        priority: 0
+        priority: 1
       - id: claude-opus-newapi
         provider: newapi
         model: claude-opus-4-7
         supports-thinking: true
-        priority: 0
+        priority: 1
       - id: glm-5.1
         provider: glm
         model: glm-5.1
         supports-thinking: true
-        priority: 1
+        priority: 2
 
   embedding:
     default-model: bge-m3

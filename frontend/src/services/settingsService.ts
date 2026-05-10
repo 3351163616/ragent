@@ -37,6 +37,9 @@ export interface SystemSettings {
       {
         url: string;
         apiKey?: string | null;
+        format?: string | null;
+        thinkingParameter?: string | null;
+        reasoningEffort?: string | null;
         endpoints: Record<string, string>;
       }
     >;

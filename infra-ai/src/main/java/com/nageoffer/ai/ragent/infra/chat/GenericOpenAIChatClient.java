@@ -17,10 +17,13 @@
 
 package com.nageoffer.ai.ragent.infra.chat;
 
+import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
+import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import okhttp3.OkHttpClient;
 
+import java.util.Locale;
 import java.util.concurrent.Executor;
 
 /**
@@ -28,6 +31,11 @@ import java.util.concurrent.Executor;
  * 由 {@link com.nageoffer.ai.ragent.infra.config.ChatClientRegistrar} 根据 YAML 配置自动注册
  */
 public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
+
+    private static final String THINKING_PARAMETER_ENABLE_THINKING = "enable_thinking";
+    private static final String THINKING_PARAMETER_REASONING_EFFORT = "reasoning_effort";
+    private static final String THINKING_PARAMETER_NONE = "none";
+    private static final String DEFAULT_REASONING_EFFORT = "medium";
 
     private final String providerName;
 
@@ -52,5 +60,38 @@ public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         return doStreamChat(request, callback, target);
+    }
+
+    @Override
+    protected void customizeRequestBody(JsonObject body, ChatRequest request, ModelTarget target) {
+        if (!Boolean.TRUE.equals(request.getThinking())) {
+            return;
+        }
+
+        AIModelProperties.ProviderConfig provider = target == null ? null : target.provider();
+        String thinkingParameter = normalizeThinkingParameter(provider == null ? null : provider.getThinkingParameter());
+        if (THINKING_PARAMETER_REASONING_EFFORT.equals(thinkingParameter)) {
+            body.addProperty(THINKING_PARAMETER_REASONING_EFFORT, resolveReasoningEffort(provider));
+            return;
+        }
+        if (THINKING_PARAMETER_NONE.equals(thinkingParameter) || "disabled".equals(thinkingParameter)) {
+            return;
+        }
+
+        body.addProperty(THINKING_PARAMETER_ENABLE_THINKING, true);
+    }
+
+    private String normalizeThinkingParameter(String parameter) {
+        if (parameter == null || parameter.isBlank()) {
+            return THINKING_PARAMETER_ENABLE_THINKING;
+        }
+        return parameter.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+    }
+
+    private String resolveReasoningEffort(AIModelProperties.ProviderConfig provider) {
+        if (provider == null || provider.getReasoningEffort() == null || provider.getReasoningEffort().isBlank()) {
+            return DEFAULT_REASONING_EFFORT;
+        }
+        return provider.getReasoningEffort().trim();
     }
 }

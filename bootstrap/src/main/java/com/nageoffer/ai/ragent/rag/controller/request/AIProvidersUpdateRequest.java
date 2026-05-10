@@ -36,6 +36,12 @@ public class AIProvidersUpdateRequest {
 
         private String apiKey;
 
+        private String format;
+
+        private String thinkingParameter;
+
+        private String reasoningEffort;
+
         private Map<String, String> endpoints;
     }
 }

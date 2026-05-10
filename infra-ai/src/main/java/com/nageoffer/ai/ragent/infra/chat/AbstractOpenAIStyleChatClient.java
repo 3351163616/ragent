@@ -84,6 +84,13 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
     }
 
     /**
+     * 子类可覆写此方法，根据模型目标配置添加提供商特有的请求体字段
+     */
+    protected void customizeRequestBody(JsonObject body, ChatRequest request, ModelTarget target) {
+        customizeRequestBody(body, request);
+    }
+
+    /**
      * 是否要求提供商配置 API Key
      */
     protected boolean requiresApiKey() {
@@ -229,7 +236,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
             body.addProperty("max_tokens", request.getMaxTokens());
         }
 
-        customizeRequestBody(body, request);
+        customizeRequestBody(body, request, target);
         return body;
     }
 
