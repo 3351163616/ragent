@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Power, PowerOff, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -48,6 +48,8 @@ import type {
   IntentNodeUpdatePayload
 } from "@/services/intentTreeService";
 import {
+  batchDisableIntentNodes,
+  batchEnableIntentNodes,
   createIntentNode,
   deleteIntentNode,
   getIntentTree,
@@ -147,6 +149,30 @@ const findNodeByCode = (nodes: IntentNodeTree[], code: string | null): IntentNod
   return null;
 };
 
+const isNodeEnabled = (node?: IntentNodeTree | null) => node?.enabled !== 0;
+
+const collectSubtreeIds = (node: IntentNodeTree): number[] => [
+  node.id,
+  ...(node.children ?? []).flatMap((child) => collectSubtreeIds(child))
+];
+
+const collectAncestorIds = (
+    nodes: IntentNodeTree[],
+    code: string,
+    ancestors: number[] = []
+): number[] | null => {
+  for (const node of nodes) {
+    if (node.intentCode === code) {
+      return ancestors;
+    }
+    const found = collectAncestorIds(node.children ?? [], code, [...ancestors, node.id]);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+};
+
 const resolveLevelLabel = (value?: number | null) =>
     LEVEL_OPTIONS.find((option) => option.value === (value ?? 0))?.label ?? "UNKNOWN";
 
@@ -172,6 +198,7 @@ export function IntentTreePage() {
   const [editingNode, setEditingNode] = useState<IntentNodeTree | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IntentNodeTree | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [togglingNodeId, setTogglingNodeId] = useState<number | null>(null);
   const focusIntentCode = searchParams.get("intentCode")?.trim() || null;
 
   const selectedNode = useMemo(() => findNodeByCode(tree, selectedCode), [tree, selectedCode]);
@@ -264,21 +291,46 @@ export function IntentTreePage() {
     await loadTree();
   };
 
+  const handleToggleEnabled = async (node: IntentNodeTree) => {
+    const enabled = isNodeEnabled(node);
+    setTogglingNodeId(node.id);
+    try {
+      if (enabled) {
+        const ids = collectSubtreeIds(node);
+        await batchDisableIntentNodes(ids);
+        toast.success(ids.length > 1 ? `已禁用 ${ids.length} 个节点` : "已禁用节点");
+      } else {
+        const ids = Array.from(new Set([...(collectAncestorIds(tree, node.intentCode) ?? []), node.id]));
+        await batchEnableIntentNodes(ids);
+        toast.success(ids.length > 1 ? "已启用节点及父级节点" : "已启用节点");
+      }
+      await loadTree();
+    } catch (error) {
+      toast.error(getErrorMessage(error, enabled ? "禁用失败" : "启用失败"));
+      console.error(error);
+    } finally {
+      setTogglingNodeId(null);
+    }
+  };
+
   const renderNode = (node: IntentNodeTree, depth = 0) => {
     const hasChildren = Boolean(node.children && node.children.length > 0);
     const isExpanded = expandedMap[node.intentCode] ?? true;
     const isSelected = selectedCode === node.intentCode;
+    const enabled = isNodeEnabled(node);
+    const toggleDisabled = togglingNodeId === node.id;
     return (
         <div key={node.intentCode}>
           <div
               className={cn(
                   "group flex cursor-pointer items-center justify-between rounded-xl px-3 py-2 transition-colors",
-                  isSelected ? "bg-slate-100 text-slate-900" : "hover:bg-slate-50"
+                  isSelected ? "bg-slate-100 text-slate-900" : "hover:bg-slate-50",
+                  !enabled && "text-muted-foreground"
               )}
               style={{ paddingLeft: `${depth * 16 + 12}px` }}
               onClick={() => setSelectedCode(node.intentCode)}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {hasChildren ? (
                   <button
                       type="button"
@@ -297,14 +349,31 @@ export function IntentTreePage() {
               ) : (
                   <span className="h-5 w-5" />
               )}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">{node.name}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={cn("truncate text-sm font-medium", enabled ? "text-foreground" : "text-muted-foreground")}>
+                  {node.name}
+                </span>
                 <Badge variant="outline">{resolveLevelLabel(node.level)}</Badge>
                 <Badge variant={resolveKindBadge(node.kind)}>{resolveKindLabel(node.kind)}</Badge>
+                <Badge variant={enabled ? "default" : "secondary"}>{enabled ? "启用" : "停用"}</Badge>
               </div>
             </div>
             <div className="hidden items-center gap-2 text-xs text-muted-foreground group-hover:flex">
               <span className="truncate">{node.intentCode}</span>
+              <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={toggleDisabled}
+                  title={enabled ? "禁用节点" : "启用节点"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleToggleEnabled(node);
+                  }}
+              >
+                {enabled ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+              </Button>
             </div>
           </div>
           {hasChildren && isExpanded ? node.children?.map((child) => renderNode(child, depth + 1)) : null}
@@ -373,6 +442,21 @@ export function IntentTreePage() {
                         <p className="mt-1 text-xs text-muted-foreground">{selectedNode.intentCode}</p>
                       </div>
                       <div className="flex flex-col gap-2">
+                        <Button
+                            size="sm"
+                            variant={isNodeEnabled(selectedNode) ? "outline" : "default"}
+                            disabled={togglingNodeId === selectedNode.id}
+                            onClick={() => handleToggleEnabled(selectedNode)}
+                        >
+                          {isNodeEnabled(selectedNode) ? (
+                              <PowerOff className="mr-2 h-4 w-4" />
+                          ) : (
+                              <Power className="mr-2 h-4 w-4" />
+                          )}
+                          {isNodeEnabled(selectedNode)
+                              ? selectedNode.children?.length ? "禁用子树" : "禁用节点"
+                              : "启用节点"}
+                        </Button>
                         <Button size="sm" onClick={() => openCreateDialog(selectedNode)}>
                           <Plus className="mr-2 h-4 w-4" />
                           新建子节点
