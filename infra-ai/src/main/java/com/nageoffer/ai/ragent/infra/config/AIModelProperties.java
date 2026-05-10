@@ -83,6 +83,11 @@ public class AIModelProperties {
         private String deepThinkingModel;
 
         /**
+         * RAG 内部任务模型标识，如查询改写、意图识别、摘要等
+         */
+        private String internalModel;
+
+        /**
          * 候选模型列表
          */
         private List<ModelCandidate> candidates = new ArrayList<>();

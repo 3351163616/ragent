@@ -29,6 +29,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +72,9 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
 
     /** LLM 服务，用于调用大语言模型完成查询改写和拆分 */
     private final LLMService llmService;
+
+    /** 内部 LLM 任务模型选择器 */
+    private final InternalChatModelSelector internalChatModelSelector;
 
     /** RAG 配置属性，包含查询改写开关等配置项 */
     private final RAGConfigProperties ragConfigProperties;
@@ -186,7 +190,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         ChatRequest req = buildRewriteRequest(systemPrompt, normalizedQuestion, history);
 
         try {
-            String raw = llmService.chat(req);
+            String raw = llmService.chat(req, internalChatModelSelector.modelId());
             RewriteResult parsed = parseRewriteAndSplit(raw);
 
             if (parsed != null) {

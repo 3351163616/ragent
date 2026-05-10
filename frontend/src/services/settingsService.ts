@@ -62,6 +62,7 @@ export type AISettings = SystemSettings["ai"];
 export interface AIModelSelection {
   chatDefaultModel: string;
   chatDeepThinkingModel: string;
+  chatInternalModel: string;
   embeddingDefaultModel: string;
   rerankDefaultModel: string;
 }
@@ -69,6 +70,7 @@ export interface AIModelSelection {
 export interface ModelGroup {
   defaultModel?: string | null;
   deepThinkingModel?: string | null;
+  internalModel?: string | null;
   candidates: ModelCandidate[];
 }
 

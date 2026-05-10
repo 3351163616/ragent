@@ -174,6 +174,7 @@ public class RAGSettingsController {
         return AISettings.ModelGroup.builder()
                 .defaultModel(group.getDefaultModel())
                 .deepThinkingModel(group.getDeepThinkingModel())
+                .internalModel(group.getInternalModel())
                 .candidates(group.getCandidates() == null
                         ? null
                         : group.getCandidates().stream()

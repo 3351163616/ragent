@@ -28,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -84,6 +85,7 @@ public class AIModelSelectionConfigService {
 
         setDefaultModel(aiModelProperties.getChat(), request.getChatDefaultModel(), "Chat默认模型");
         setDeepThinkingModel(aiModelProperties.getChat(), request.getChatDeepThinkingModel());
+        setInternalModel(aiModelProperties.getChat(), request.getChatInternalModel(), request.getChatDefaultModel());
         setDefaultModel(aiModelProperties.getEmbedding(), request.getEmbeddingDefaultModel(), "Embedding模型");
         setDefaultModel(aiModelProperties.getRerank(), request.getRerankDefaultModel(), "Rerank模型");
     }
@@ -99,6 +101,12 @@ public class AIModelSelectionConfigService {
             throw new ClientException("深度思考模型必须选择支持Thinking的Chat候选模型");
         }
         group.setDeepThinkingModel(modelId);
+    }
+
+    private void setInternalModel(AIModelProperties.ModelGroup group, String modelId, String fallbackModelId) {
+        String actualModelId = StringUtils.hasText(modelId) ? modelId : fallbackModelId;
+        requireCandidate(group, actualModelId, "内部任务模型");
+        group.setInternalModel(actualModelId);
     }
 
     private AIModelProperties.ModelCandidate requireCandidate(

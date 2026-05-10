@@ -82,6 +82,7 @@ interface CurrentModelUsage {
 const emptyModelSelection: AIModelSelection = {
   chatDefaultModel: "",
   chatDeepThinkingModel: "",
+  chatInternalModel: "",
   embeddingDefaultModel: "",
   rerankDefaultModel: ""
 };
@@ -240,6 +241,7 @@ export function SystemSettingsPage() {
     setModelSelection({
       chatDefaultModel: settings.ai.chat.defaultModel || "",
       chatDeepThinkingModel: settings.ai.chat.deepThinkingModel || "",
+      chatInternalModel: settings.ai.chat.internalModel || settings.ai.chat.defaultModel || "",
       embeddingDefaultModel: settings.ai.embedding.defaultModel || "",
       rerankDefaultModel: settings.ai.rerank.defaultModel || ""
     });
@@ -266,6 +268,7 @@ export function SystemSettingsPage() {
   const currentModelUsages = [
     resolveModelUsage("Chat 默认", ai.chat, ai.chat.defaultModel),
     resolveModelUsage("深度思考", ai.chat, ai.chat.deepThinkingModel),
+    resolveModelUsage("内部任务", ai.chat, ai.chat.internalModel || ai.chat.defaultModel),
     resolveModelUsage("Embedding", ai.embedding, ai.embedding.defaultModel),
     resolveModelUsage("Rerank", ai.rerank, ai.rerank.defaultModel)
   ].filter((item) => item.modelId);
@@ -278,6 +281,7 @@ export function SystemSettingsPage() {
   const modelSelectionChanged =
     modelSelection.chatDefaultModel !== (ai.chat.defaultModel || "") ||
     modelSelection.chatDeepThinkingModel !== (ai.chat.deepThinkingModel || "") ||
+    modelSelection.chatInternalModel !== (ai.chat.internalModel || ai.chat.defaultModel || "") ||
     modelSelection.embeddingDefaultModel !== (ai.embedding.defaultModel || "") ||
     modelSelection.rerankDefaultModel !== (ai.rerank.defaultModel || "");
   const providerUsageMap = currentModelUsages.reduce<Record<string, CurrentModelUsage[]>>(
@@ -401,6 +405,7 @@ export function SystemSettingsPage() {
     if (
       !modelSelection.chatDefaultModel ||
       !modelSelection.chatDeepThinkingModel ||
+      !modelSelection.chatInternalModel ||
       !modelSelection.embeddingDefaultModel ||
       !modelSelection.rerankDefaultModel
     ) {
@@ -509,7 +514,7 @@ export function SystemSettingsPage() {
             保存模型配置
           </Button>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <ModelSelectField
             label="Chat 默认模型"
             value={modelSelection.chatDefaultModel}
@@ -526,6 +531,15 @@ export function SystemSettingsPage() {
             providers={ai.providers || {}}
             onChange={(value) =>
               setModelSelection((prev) => ({ ...prev, chatDeepThinkingModel: value }))
+            }
+          />
+          <ModelSelectField
+            label="内部任务模型"
+            value={modelSelection.chatInternalModel}
+            candidates={chatCandidates}
+            providers={ai.providers || {}}
+            onChange={(value) =>
+              setModelSelection((prev) => ({ ...prev, chatInternalModel: value }))
             }
           />
           <ModelSelectField
@@ -665,6 +679,7 @@ export function SystemSettingsPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <InfoItem label="Default Model" value={ai.chat.defaultModel} />
             <InfoItem label="Deep Thinking Model" value={ai.chat.deepThinkingModel} />
+            <InfoItem label="Internal Model" value={ai.chat.internalModel || ai.chat.defaultModel} />
           </div>
           <Table className="min-w-[720px]">
             <TableHeader>

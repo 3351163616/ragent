@@ -33,6 +33,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import com.nageoffer.ai.ragent.rag.service.ConversationService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationCreateBO;
@@ -62,6 +63,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final MemoryProperties memoryProperties;
     private final PromptTemplateLoader promptTemplateLoader;
     private final LLMService llmService;
+    private final InternalChatModelSelector internalChatModelSelector;
 
     @Override
     public List<ConversationVO> listByUserId(String userId) {
@@ -204,7 +206,7 @@ public class ConversationServiceImpl implements ConversationService {
                     .thinking(false)
                     .build();
 
-            return llmService.chat(request);
+            return llmService.chat(request, internalChatModelSelector.modelId());
         } catch (Exception ex) {
             log.warn("生成会话标题失败", ex);
             return "新对话";

@@ -28,6 +28,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
 import com.nageoffer.ai.ragent.infra.util.LLMResponseCleaner;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
@@ -56,6 +57,7 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.MCP_PARAMETER_EXT
 public class LLMMcpParameterExtractor implements McpParameterExtractor {
 
     private final LLMService llmService;
+    private final InternalChatModelSelector internalChatModelSelector;
     private final PromptTemplateLoader promptTemplateLoader;
     private final Gson gson = new Gson();
 
@@ -92,7 +94,7 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
                     .topP(0.3D)
                     .thinking(false)
                     .build();
-            raw = llmService.chat(request);
+            raw = llmService.chat(request, internalChatModelSelector.modelId());
             log.info("MCP 参数提取 LLM 响应: {}", raw);
 
             // 解析 JSON 响应

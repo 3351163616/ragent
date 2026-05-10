@@ -23,6 +23,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationMessageDO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationSummaryDO;
@@ -91,6 +92,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
 
     /** LLM 服务，用于调用大语言模型生成摘要文本 */
     private final LLMService llmService;
+
+    /** 内部 LLM 任务模型选择器 */
+    private final InternalChatModelSelector internalChatModelSelector;
 
     /** Prompt 模板加载器，加载摘要生成用的 Prompt 模板 */
     private final PromptTemplateLoader promptTemplateLoader;
@@ -336,7 +340,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 .thinking(false)     // 摘要任务无需深度思考
                 .build();
         try {
-            String result = llmService.chat(request);
+            String result = llmService.chat(request, internalChatModelSelector.modelId());
             log.info("对话摘要生成 - resultChars: {}", result.length());
 
             return result;

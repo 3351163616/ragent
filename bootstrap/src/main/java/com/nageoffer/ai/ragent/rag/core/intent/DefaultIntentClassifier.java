@@ -31,6 +31,7 @@ import com.nageoffer.ai.ragent.rag.dao.mapper.IntentNodeMapper;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -84,6 +85,9 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
 
     /** LLM 服务，用于调用大语言模型完成意图分类打分 */
     private final LLMService llmService;
+
+    /** 内部 LLM 任务模型选择器 */
+    private final InternalChatModelSelector internalChatModelSelector;
 
     /** 意图节点 MyBatis-Plus Mapper，用于从数据库加载意图树的扁平节点列表 */
     private final IntentNodeMapper intentNodeMapper;
@@ -238,7 +242,7 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
                 .thinking(false)
                 .build();
 
-        String raw = llmService.chat(request);
+        String raw = llmService.chat(request, internalChatModelSelector.modelId());
 
         try {
             JsonArray arr = parseIntentResultArray(raw);

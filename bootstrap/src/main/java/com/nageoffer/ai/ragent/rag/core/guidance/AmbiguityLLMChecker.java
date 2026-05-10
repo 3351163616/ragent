@@ -26,6 +26,7 @@ import com.nageoffer.ai.ragent.infra.chat.LLMService;
 import com.nageoffer.ai.ragent.infra.util.LLMResponseCleaner;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
+import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,7 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.GUIDANCE_AMBIGUIT
 public class AmbiguityLLMChecker {
 
     private final LLMService llmService;
+    private final InternalChatModelSelector internalChatModelSelector;
     private final PromptTemplateLoader promptTemplateLoader;
 
     /**
@@ -72,7 +74,7 @@ public class AmbiguityLLMChecker {
                 .build();
 
         try {
-            String raw = llmService.chat(request);
+            String raw = llmService.chat(request, internalChatModelSelector.modelId());
             String cleaned = LLMResponseCleaner.stripMarkdownCodeFence(raw);
             JsonElement root = JsonParser.parseString(cleaned);
 

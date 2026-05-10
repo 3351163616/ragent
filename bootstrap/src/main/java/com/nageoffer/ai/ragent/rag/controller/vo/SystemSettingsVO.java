@@ -106,6 +106,7 @@ public class SystemSettingsVO {
         public static class ModelGroup {
             private String defaultModel;
             private String deepThinkingModel;
+            private String internalModel;
             private List<ModelCandidate> candidates;
         }
 

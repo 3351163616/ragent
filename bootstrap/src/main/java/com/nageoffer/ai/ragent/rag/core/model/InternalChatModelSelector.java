@@ -15,23 +15,29 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.controller.request;
+package com.nageoffer.ai.ragent.rag.core.model;
 
-import lombok.Data;
+import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 /**
- * AI 默认模型选择更新请求
+ * RAG 内部 LLM 任务的模型选择器。
  */
-@Data
-public class AIModelSelectionUpdateRequest {
+@Component
+@RequiredArgsConstructor
+public class InternalChatModelSelector {
 
-    private String chatDefaultModel;
+    private final AIModelProperties aiModelProperties;
 
-    private String chatDeepThinkingModel;
-
-    private String chatInternalModel;
-
-    private String embeddingDefaultModel;
-
-    private String rerankDefaultModel;
+    public String modelId() {
+        AIModelProperties.ModelGroup chat = aiModelProperties.getChat();
+        if (chat == null) {
+            return null;
+        }
+        return StringUtils.hasText(chat.getInternalModel())
+                ? chat.getInternalModel()
+                : chat.getDefaultModel();
+    }
 }

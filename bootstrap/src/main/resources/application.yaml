@@ -153,6 +153,7 @@ ai:
   chat:
     default-model: claude-opus
     deep-thinking-model: claude-opus
+    internal-model: claude-opus
     candidates:
       - id: gpt-5.5
         provider: gpt55
