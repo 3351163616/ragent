@@ -18,7 +18,9 @@
 package com.nageoffer.ai.ragent.rag.service.handler;
 
 import cn.hutool.core.util.StrUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationDO;
+import com.nageoffer.ai.ragent.rag.dto.Citation;
 import com.nageoffer.ai.ragent.rag.dto.CompletionPayload;
 import com.nageoffer.ai.ragent.rag.dto.MessageDelta;
 import com.nageoffer.ai.ragent.rag.dto.MetaPayload;
@@ -32,6 +34,7 @@ import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
 import lombok.extern.slf4j.Slf4j;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -60,7 +63,7 @@ import java.util.Optional;
  * @see StreamTaskManager     流式任务管理器，提供取消感知能力
  */
 @Slf4j
-public class StreamChatEventHandler implements StreamCallback {
+public class StreamChatEventHandler implements StreamCallback, CitationAwareStreamCallback {
 
     /** SSE 事件中标识思考内容的类型标记 */
     private static final String TYPE_THINK = "think";
@@ -83,11 +86,14 @@ public class StreamChatEventHandler implements StreamCallback {
     private final String userId;
     /** 流式任务管理器 */
     private final StreamTaskManager taskManager;
+    /** JSON 序列化器 */
+    private final ObjectMapper objectMapper;
     /** 是否需要在完成时推送会话标题（仅新会话或无标题会话需要） */
     private final boolean sendTitleOnComplete;
     /** 累积 LLM 输出的完整回复内容，用于最终持久化 */
     private final StringBuilder answer = new StringBuilder();
     private final StringBuilder thinking = new StringBuilder();
+    private List<Citation> citations = List.of();
     private long thinkingStartMs;
     private int thinkingDurationSeconds;
 
@@ -113,6 +119,7 @@ public class StreamChatEventHandler implements StreamCallback {
         this.memoryService = params.getMemoryService();
         this.conversationGroupService = params.getConversationGroupService();
         this.taskManager = params.getTaskManager();
+        this.objectMapper = params.getObjectMapper();
         this.userId = UserContext.getUserId();
 
         // 计算配置
@@ -182,14 +189,14 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isNotBlank(content)) {
             try {
                 String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-                ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration());
+                ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration(), serializeCitations());
                 messageId = memoryService.append(conversationId, userId, message);
             } catch (Exception e) {
                 log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
             }
         }
         String title = resolveTitleForEvent();
-        return new CompletionPayload(String.valueOf(messageId), title);
+        return new CompletionPayload(messageId, title, citations);
     }
 
     /**
@@ -263,7 +270,7 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         try {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
+            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration(), serializeCitations());
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);
@@ -271,7 +278,7 @@ public class StreamChatEventHandler implements StreamCallback {
         String title = resolveTitleForEvent();
         String messageIdText = StrUtil.isBlank(messageId) ? null : messageId;
         // 发送完成事件和结束标记，然后注销任务并关闭 SSE 连接
-        sender.sendEvent(SSEEventType.FINISH.value(), new CompletionPayload(messageIdText, title));
+        sender.sendEvent(SSEEventType.FINISH.value(), new CompletionPayload(messageIdText, title, citations));
         sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
         taskManager.unregister(taskId);
         sender.complete();
@@ -327,6 +334,23 @@ public class StreamChatEventHandler implements StreamCallback {
 
     private Integer resolveThinkingDuration() {
         return thinkingDurationSeconds > 0 ? thinkingDurationSeconds : null;
+    }
+
+    @Override
+    public void setCitations(List<Citation> citations) {
+        this.citations = citations == null ? List.of() : List.copyOf(citations);
+    }
+
+    private String serializeCitations() {
+        if (citations == null || citations.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(citations);
+        } catch (Exception e) {
+            log.warn("序列化回答引用来源失败，conversationId：{}", conversationId, e);
+            return null;
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ package com.nageoffer.ai.ragent.rag.core.prompt;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.rag.core.citation.CitationService;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -41,6 +42,7 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONTEXT_FORMAT_PA
 public class DefaultContextFormatter implements ContextFormatter {
 
     private final PromptTemplateLoader templateLoader;
+    private final CitationService citationService;
 
     @Override
     public String formatKbContext(List<NodeScore> kbIntents, Map<String, List<RetrievedChunk>> rerankedByIntent, int topK) {
@@ -101,7 +103,7 @@ public class DefaultContextFormatter implements ContextFormatter {
         }
 
         String body = allChunks.stream()
-                .map(RetrievedChunk::getText)
+                .map(citationService::formatChunkForPrompt)
                 .collect(Collectors.joining("\n"));
         return renderKbSection(snippetSection, body);
     }
@@ -128,7 +130,7 @@ public class DefaultContextFormatter implements ContextFormatter {
         }
 
         String body = chunks.stream()
-                .map(RetrievedChunk::getText)
+                .map(citationService::formatChunkForPrompt)
                 .collect(Collectors.joining("\n"));
         return renderKbSection("", body);
     }
@@ -195,7 +197,7 @@ public class DefaultContextFormatter implements ContextFormatter {
     private String joinChunkTexts(List<RetrievedChunk> chunks, int topK) {
         return chunks.stream()
                 .limit(topK)
-                .map(RetrievedChunk::getText)
+                .map(citationService::formatChunkForPrompt)
                 .collect(Collectors.joining("\n"));
     }
 

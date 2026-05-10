@@ -280,6 +280,7 @@ CREATE TABLE `t_message`
     `content`           text        NOT NULL COMMENT '消息内容',
     `thinking_content`  text        DEFAULT NULL COMMENT '深度思考内容',
     `thinking_duration` int(11) DEFAULT NULL COMMENT '深度思考耗时（秒）',
+    `citations_json`    text        DEFAULT NULL COMMENT '回答引用来源JSON',
     `create_time`       datetime DEFAULT NULL COMMENT '创建时间',
     `update_time`       datetime DEFAULT NULL COMMENT '更新时间',
     `deleted`           tinyint(4) DEFAULT '0' COMMENT '是否删除 0：正常 1：删除',

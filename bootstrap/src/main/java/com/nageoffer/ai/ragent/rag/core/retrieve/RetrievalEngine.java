@@ -22,6 +22,7 @@ import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
+import com.nageoffer.ai.ragent.rag.core.citation.CitationService;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScoreFilters;
@@ -40,6 +41,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +93,9 @@ public class RetrievalEngine {
     /** 多通道检索引擎，负责 KB 场景下的向量检索和后处理 */
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
 
+    /** 引用来源服务，负责为检索结果分配回答引用编号 */
+    private final CitationService citationService;
+
     /** 子问题上下文构建线程池，用于并行处理多个子问题 */
     private final Executor ragContextExecutor;
 
@@ -122,6 +127,7 @@ public class RetrievalEngine {
 
         // 确定实际 topK：优先使用传入值，无效则回退到全局默认值
         int finalTopK = topK > 0 ? topK : searchProperties.getDefaultTopK();
+        CitationService.CitationIndexAllocator citationAllocator = citationService.newAllocator();
         // 为每个子问题提交异步上下文构建任务，利用线程池并行加速
         List<CompletableFuture<SubQuestionContext>> tasks = subIntents.stream()
                 .map(si -> CompletableFuture.supplyAsync(
@@ -129,7 +135,8 @@ public class RetrievalEngine {
                             try {
                                 return buildSubQuestionContext(
                                         si,
-                                        resolveSubQuestionTopK(si, finalTopK)
+                                        resolveSubQuestionTopK(si, finalTopK),
+                                        citationAllocator
                                 );
                             } catch (Exception e) {
                                 log.error("子问题上下文构建失败，降级为空上下文，question：{}", si.subQuestion(), e);
@@ -147,7 +154,12 @@ public class RetrievalEngine {
         Map<String, List<RetrievedChunk>> mergedIntentChunks = new HashMap<>();
         for (SubQuestionContext context : contexts) {
             if (CollUtil.isNotEmpty(context.intentChunks())) {
-                mergedIntentChunks.putAll(context.intentChunks());
+                context.intentChunks().forEach((intentId, chunks) -> {
+                    if (CollUtil.isNotEmpty(chunks)) {
+                        mergedIntentChunks.computeIfAbsent(intentId, ignored -> new ArrayList<>())
+                                .addAll(chunks);
+                    }
+                });
             }
         }
 
@@ -197,13 +209,15 @@ public class RetrievalEngine {
      * @param topK   当前子问题的实际 topK
      * @return 子问题上下文，包含 KB 文本、MCP 文本和按意图分组的检索块
      */
-    private SubQuestionContext buildSubQuestionContext(SubQuestionIntent intent, int topK) {
+    private SubQuestionContext buildSubQuestionContext(SubQuestionIntent intent,
+                                                       int topK,
+                                                       CitationService.CitationIndexAllocator citationAllocator) {
         // 按意图类型分流：KB 走向量检索，MCP 走工具调用
         List<NodeScore> kbIntents = NodeScoreFilters.kb(intent.nodeScores());
         List<NodeScore> mcpIntents = NodeScoreFilters.mcp(intent.nodeScores());
 
         // KB 检索：委托多通道检索引擎执行向量检索 + 后处理（去重、Rerank）
-        KbResult kbResult = retrieveAndRerank(intent, kbIntents, topK);
+        KbResult kbResult = retrieveAndRerank(intent, kbIntents, topK, citationAllocator);
 
         // MCP 执行：仅在存在 MCP 意图时触发工具调用
         String mcpContext = CollUtil.isNotEmpty(mcpIntents)
@@ -274,7 +288,10 @@ public class RetrievalEngine {
      * @param topK      期望返回的结果数量
      * @return {@link KbResult} 包含格式化后的上下文文本和按意图分组的 Chunk 映射
      */
-    private KbResult retrieveAndRerank(SubQuestionIntent intent, List<NodeScore> kbIntents, int topK) {
+    private KbResult retrieveAndRerank(SubQuestionIntent intent,
+                                       List<NodeScore> kbIntents,
+                                       int topK,
+                                       CitationService.CitationIndexAllocator citationAllocator) {
         // 使用多通道检索引擎（是否启用全局检索由置信度阈值决定）
         List<SubQuestionIntent> subIntents = List.of(intent);
         List<RetrievedChunk> chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(subIntents, topK);
@@ -282,6 +299,7 @@ public class RetrievalEngine {
         if (CollUtil.isEmpty(chunks)) {
             return KbResult.empty();
         }
+        citationService.assignCitationIndexes(chunks, citationAllocator);
 
         // 按意图节点分组（用于格式化上下文）
         Map<String, List<RetrievedChunk>> intentChunks = new HashMap<>();

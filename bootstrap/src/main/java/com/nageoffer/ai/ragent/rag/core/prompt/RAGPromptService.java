@@ -21,6 +21,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.rag.core.citation.CitationService;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +62,7 @@ public class RAGPromptService {
 
     /** 模板加载器，负责从 classpath 加载 .st 模板文件并缓存 */
     private final PromptTemplateLoader templateLoader;
+    private final CitationService citationService;
 
     /**
      * 根据上下文决策场景并生成系统提示词
@@ -82,7 +84,10 @@ public class RAGPromptService {
         String template = StrUtil.isNotBlank(plan.getBaseTemplate())
                 ? plan.getBaseTemplate()
                 : defaultTemplate(plan.getScene());
-        return StrUtil.isBlank(template) ? "" : PromptTemplateUtils.cleanupPrompt(template);
+        if (StrUtil.isBlank(template)) {
+            return "";
+        }
+        return PromptTemplateUtils.cleanupPrompt(template + citationService.buildPromptInstruction());
     }
 
     /**

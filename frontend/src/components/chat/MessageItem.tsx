@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Brain, ChevronDown, Copy, PencilLine } from "lucide-react";
+import { Brain, ChevronDown, Copy, ExternalLink, FileText, PencilLine } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,76 @@ import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import type { Message } from "@/types";
+import type { Citation, Message } from "@/types";
 
 interface MessageItemProps {
   message: Message;
   isLast?: boolean;
+}
+
+function CitationList({ citations }: { citations?: Citation[] }) {
+  if (!citations || citations.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+        <FileText className="h-3.5 w-3.5" />
+        引用来源
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {citations.map((citation) => {
+          const title = citation.docName || citation.chunkId || "未知来源";
+          const chunkLabel =
+            citation.chunkIndex !== null && citation.chunkIndex !== undefined
+              ? `chunk-${citation.chunkIndex}`
+              : null;
+          const source = citation.sourceUrl || undefined;
+          return (
+            <div
+              key={`${citation.index}-${citation.chunkId || title}`}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
+            >
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-700">
+                  [{citation.index}]
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-medium text-slate-800">{title}</span>
+                    {source ? (
+                      <a
+                        href={source}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-slate-400 hover:text-[#2563EB]"
+                        title="打开来源"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+                    {citation.kbName ? <span>{citation.kbName}</span> : null}
+                    {chunkLabel ? <span>{chunkLabel}</span> : null}
+                    {citation.score !== null && citation.score !== undefined ? (
+                      <span>{citation.score.toFixed(2)}</span>
+                    ) : null}
+                  </div>
+                  {citation.snippet ? (
+                    <p className="mt-1 line-clamp-2 break-words text-[11px] leading-relaxed text-slate-500">
+                      {citation.snippet}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export const MessageItem = React.memo(function MessageItem({ message, isLast }: MessageItemProps) {
@@ -128,6 +193,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             </div>
           ) : null}
           {hasContent ? <MarkdownRenderer content={message.content} /> : null}
+          <CitationList citations={message.citations} />
           {message.status === "error" ? (
             <p className="text-xs text-rose-500">生成已中断。</p>
           ) : null}

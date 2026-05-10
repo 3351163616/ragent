@@ -95,6 +95,11 @@ public class ChatMessage {
      */
     private Integer thinkingDuration;
 
+    /**
+     * 引用来源 JSON（仅 ASSISTANT 角色可能携带）
+     */
+    private String citationsJson;
+
     public ChatMessage(Role role, String content) {
         this.role = role;
         this.content = content;
@@ -153,6 +158,21 @@ public class ChatMessage {
         ChatMessage message = new ChatMessage(Role.ASSISTANT, content);
         message.setThinkingContent(thinkingContent);
         message.setThinkingDuration(thinkingDuration);
+        return message;
+    }
+
+    /**
+     * 创建一条带思考内容、耗时和引用来源的助手消息
+     *
+     * @param content          助手回复内容
+     * @param thinkingContent  深度思考内容
+     * @param thinkingDuration 深度思考耗时（秒）
+     * @param citationsJson    引用来源 JSON
+     * @return 封装好的 {@link ChatMessage} 对象，角色为 {@link Role#ASSISTANT}
+     */
+    public static ChatMessage assistant(String content, String thinkingContent, Integer thinkingDuration, String citationsJson) {
+        ChatMessage message = assistant(content, thinkingContent, thinkingDuration);
+        message.setCitationsJson(citationsJson);
         return message;
     }
 }

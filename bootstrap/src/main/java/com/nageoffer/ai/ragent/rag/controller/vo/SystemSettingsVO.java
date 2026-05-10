@@ -155,19 +155,27 @@ public class SystemSettingsVO {
         private Integer titleMaxLength;
     }
 
+    @Data
+    @Builder
+    public static class CitationSettings {
+        private Boolean enabled;
+    }
+
     @Setter
     @Getter
     public static class RagSettings {
         @JsonProperty("default")
         private DefaultSettings defaultConfig;
         private QueryRewriteSettings queryRewrite;
+        private CitationSettings citations;
         private RateLimitSettings rateLimit;
         private MemorySettings memory;
 
         public RagSettings(DefaultSettings defaultConfig, QueryRewriteSettings queryRewrite,
-                           RateLimitSettings rateLimit, MemorySettings memory) {
+                           CitationSettings citations, RateLimitSettings rateLimit, MemorySettings memory) {
             this.defaultConfig = defaultConfig;
             this.queryRewrite = queryRewrite;
+            this.citations = citations;
             this.rateLimit = rateLimit;
             this.memory = memory;
         }
@@ -179,6 +187,7 @@ public class SystemSettingsVO {
         public static class RagSettingsBuilder {
             private DefaultSettings defaultConfig;
             private QueryRewriteSettings queryRewrite;
+            private CitationSettings citations;
             private RateLimitSettings rateLimit;
             private MemorySettings memory;
 
@@ -189,6 +198,11 @@ public class SystemSettingsVO {
 
             public RagSettingsBuilder queryRewrite(QueryRewriteSettings queryRewrite) {
                 this.queryRewrite = queryRewrite;
+                return this;
+            }
+
+            public RagSettingsBuilder citations(CitationSettings citations) {
+                this.citations = citations;
                 return this;
             }
 
@@ -203,7 +217,7 @@ public class SystemSettingsVO {
             }
 
             public RagSettings build() {
-                return new RagSettings(defaultConfig, queryRewrite, rateLimit, memory);
+                return new RagSettings(defaultConfig, queryRewrite, citations, rateLimit, memory);
             }
         }
     }

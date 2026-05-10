@@ -186,6 +186,23 @@ const resolveKindBadge = (value?: number | null) => {
   return "outline";
 };
 
+function PromptDetailBlock({ label, value }: { label: string; value?: string | null }) {
+  const content = value?.trim();
+
+  return (
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        {content ? (
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 text-xs leading-5 text-foreground">
+              {content}
+            </pre>
+        ) : (
+            <p className="mt-2 text-sm text-muted-foreground">未配置</p>
+        )}
+      </div>
+  );
+}
+
 export function IntentTreePage() {
   const [searchParams] = useSearchParams();
   const [tree, setTree] = useState<IntentNodeTree[]>([]);
@@ -517,6 +534,20 @@ export function IntentTreePage() {
                               </Badge>
                           ));
                         })()}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium">Prompt 配置</p>
+                      <div className="mt-2 space-y-3">
+                        <PromptDetailBlock label="短规则片段" value={selectedNode.promptSnippet} />
+                        <PromptDetailBlock label="Prompt 模板" value={selectedNode.promptTemplate} />
+                        {(selectedNode.kind === 2 || selectedNode.paramPromptTemplate?.trim()) && (
+                            <PromptDetailBlock
+                                label="参数提取提示词模板"
+                                value={selectedNode.paramPromptTemplate}
+                            />
+                        )}
                       </div>
                     </div>
                   </div>

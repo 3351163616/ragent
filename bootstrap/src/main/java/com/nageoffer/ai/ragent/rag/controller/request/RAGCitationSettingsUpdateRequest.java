@@ -15,54 +15,18 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.service.bo;
+package com.nageoffer.ai.ragent.rag.controller.request;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 /**
- * 对话消息业务对象
+ * RAG 引用来源开关更新请求
  */
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class ConversationMessageBO {
+public class RAGCitationSettingsUpdateRequest {
 
     /**
-     * 对话ID
+     * 是否启用回答引用来源
      */
-    private String conversationId;
-
-    /**
-     * 用户ID
-     */
-    private String userId;
-
-    /**
-     * 角色：system/user/assistant
-     */
-    private String role;
-
-    /**
-     * 消息内容
-     */
-    private String content;
-
-    /**
-     * 深度思考内容
-     */
-    private String thinkingContent;
-
-    /**
-     * 深度思考耗时（秒）
-     */
-    private Integer thinkingDuration;
-
-    /**
-     * 引用来源 JSON
-     */
-    private String citationsJson;
+    private Boolean enabled;
 }

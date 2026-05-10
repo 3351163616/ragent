@@ -17,6 +17,7 @@
 
 package com.nageoffer.ai.ragent.rag.service.handler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.infra.chat.StreamCallback;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
@@ -50,6 +51,8 @@ public class StreamCallbackFactory {
     private final ConversationGroupService conversationGroupService;
     /** 流式任务管理器，用于注册/注销任务以及处理分布式取消 */
     private final StreamTaskManager taskManager;
+    /** JSON 序列化器，用于持久化引用来源 */
+    private final ObjectMapper objectMapper;
 
     /**
      * 创建聊天场景的流式事件处理器
@@ -79,6 +82,7 @@ public class StreamCallbackFactory {
                 .memoryService(memoryService)
                 .conversationGroupService(conversationGroupService)
                 .taskManager(taskManager)
+                .objectMapper(objectMapper)
                 .build();
 
         return new StreamChatEventHandler(params);

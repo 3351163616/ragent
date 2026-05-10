@@ -80,6 +80,11 @@ public class ConversationMessageDO {
     private Integer thinkingDuration;
 
     /**
+     * 引用来源 JSON
+     */
+    private String citationsJson;
+
+    /**
      * 创建时间，自动填充
      */
     @TableField(fill = FieldFill.INSERT)

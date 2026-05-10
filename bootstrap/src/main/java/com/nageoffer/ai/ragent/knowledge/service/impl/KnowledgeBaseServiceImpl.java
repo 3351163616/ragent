@@ -201,7 +201,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         if (kbDO == null || kbDO.getDeleted() != null && kbDO.getDeleted() == 1) {
             throw new ClientException("知识库不存在");
         }
-        return BeanUtil.toBean(kbDO, KnowledgeBaseVO.class);
+        KnowledgeBaseVO vo = BeanUtil.toBean(kbDO, KnowledgeBaseVO.class);
+        vo.setDocumentCount(countDocuments(kbId));
+        return vo;
     }
 
     @Override
@@ -222,24 +224,20 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             if (!kbIds.isEmpty()) {
                 List<Map<String, Object>> rows = knowledgeDocumentMapper.selectMaps(
                         Wrappers.query(KnowledgeDocumentDO.class)
-                                .select("kb_id AS kbId", "COUNT(1) AS docCount")
+                                .select("kb_id", "COUNT(1) AS doc_count")
                                 .in("kb_id", kbIds)
                                 .eq("deleted", 0)
                                 .groupBy("kb_id")
                 );
                 for (Map<String, Object> row : rows) {
-                    Object kbIdValue = row.get("kbId");
-                    Object countValue = row.get("docCount");
+                    Object kbIdValue = getMapValue(row, "kb_id", "kbId", "kbid");
+                    Object countValue = getMapValue(row, "doc_count", "docCount", "doccount");
                     if (kbIdValue == null) {
                         continue;
                     }
 
-                    String kbId = kbIdValue instanceof Number
-                            ? String.valueOf(((Number) kbIdValue).longValue())
-                            : kbIdValue.toString();
-                    Long count = countValue instanceof Number
-                            ? ((Number) countValue).longValue()
-                            : countValue != null ? Long.parseLong(countValue.toString()) : 0L;
+                    String kbId = toStringId(kbIdValue);
+                    Long count = toLong(countValue);
                     docCountMap.put(kbId, count);
                 }
             }
@@ -250,5 +248,50 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             vo.setDocumentCount(docCount != null ? docCount : 0L);
             return vo;
         });
+    }
+
+    private Long countDocuments(String kbId) {
+        if (!StringUtils.hasText(kbId)) {
+            return 0L;
+        }
+        return knowledgeDocumentMapper.selectCount(
+                Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
+                        .eq(KnowledgeDocumentDO::getKbId, kbId)
+                        .eq(KnowledgeDocumentDO::getDeleted, 0)
+        );
+    }
+
+    private Object getMapValue(Map<String, Object> row, String... keys) {
+        if (row == null || row.isEmpty()) {
+            return null;
+        }
+        for (String key : keys) {
+            if (row.containsKey(key)) {
+                return row.get(key);
+            }
+        }
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            for (String key : keys) {
+                if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(key)) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private String toStringId(Object value) {
+        return value instanceof Number
+                ? String.valueOf(((Number) value).longValue())
+                : value.toString();
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        return value instanceof Number
+                ? ((Number) value).longValue()
+                : Long.parseLong(value.toString());
     }
 }

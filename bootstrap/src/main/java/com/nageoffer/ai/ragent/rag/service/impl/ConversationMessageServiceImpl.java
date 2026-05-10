@@ -21,6 +21,8 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationMessageVO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationDO;
@@ -31,6 +33,7 @@ import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationMessageMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.ConversationSummaryMapper;
 import com.nageoffer.ai.ragent.rag.dao.mapper.MessageFeedbackMapper;
+import com.nageoffer.ai.ragent.rag.dto.Citation;
 import com.nageoffer.ai.ragent.rag.enums.ConversationMessageOrder;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.MessageFeedbackService;
@@ -54,6 +57,7 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
     private final ConversationMapper conversationMapper;
     private final MessageFeedbackMapper messageFeedbackMapper;
     private final MessageFeedbackService feedbackService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public String addMessage(ConversationMessageBO conversationMessage) {
@@ -111,12 +115,25 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
                     .thinkingContent(record.getThinkingContent())
                     .thinkingDuration(record.getThinkingDuration())
                     .vote(votesByMessageId.get(record.getId()))
+                    .citations(parseCitations(record.getCitationsJson()))
                     .createTime(record.getCreateTime())
                     .build();
             result.add(vo);
         }
 
         return result;
+    }
+
+    private List<Citation> parseCitations(String citationsJson) {
+        if (StrUtil.isBlank(citationsJson)) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(citationsJson, new TypeReference<List<Citation>>() {
+            });
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     @Transactional(rollbackFor = Exception.class)

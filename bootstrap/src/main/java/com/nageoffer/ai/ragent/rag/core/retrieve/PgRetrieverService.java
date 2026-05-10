@@ -17,6 +17,8 @@
 
 package com.nageoffer.ai.ragent.rag.core.retrieve;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.infra.embedding.EmbeddingService;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +26,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -35,6 +39,7 @@ public class PgRetrieverService implements RetrieverService {
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public List<RetrievedChunk> retrieve(RetrieveRequest request) {
@@ -51,14 +56,69 @@ public class PgRetrieverService implements RetrieverService {
 
         String vectorLiteral = toVectorLiteral(vector);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        return jdbcTemplate.query("SELECT id, content, 1 - (embedding <=> ?::vector) AS score FROM t_knowledge_vector WHERE metadata->>'collection_name' = ? ORDER BY embedding <=> ?::vector LIMIT ?",
+        return jdbcTemplate.query("""
+                        SELECT
+                            v.id,
+                            v.content,
+                            v.metadata::text AS metadata,
+                            1 - (v.embedding <=> ?::vector) AS score,
+                            v.metadata->>'collection_name' AS collection_name,
+                            d.id AS doc_id,
+                            d.doc_name,
+                            d.file_url,
+                            d.source_location,
+                            kb.id AS kb_id,
+                            kb.name AS kb_name,
+                            COALESCE(c.chunk_index, NULLIF(v.metadata->>'chunk_index', '')::int) AS chunk_index
+                        FROM t_knowledge_vector v
+                        LEFT JOIN t_knowledge_document d
+                            ON d.id = v.metadata->>'doc_id'
+                            AND d.deleted = 0
+                        LEFT JOIN t_knowledge_base kb
+                            ON kb.collection_name = v.metadata->>'collection_name'
+                            AND kb.deleted = 0
+                        LEFT JOIN t_knowledge_chunk c
+                            ON c.id = v.id
+                            AND c.deleted = 0
+                        WHERE v.metadata->>'collection_name' = ?
+                        ORDER BY v.embedding <=> ?::vector
+                        LIMIT ?
+                        """,
                 (rs, rowNum) -> RetrievedChunk.builder()
                         .id(rs.getString("id"))
                         .text(rs.getString("content"))
                         .score(rs.getFloat("score"))
+                        .metadata(parseMetadata(rs.getString("metadata")))
+                        .collectionName(rs.getString("collection_name"))
+                        .docId(rs.getString("doc_id"))
+                        .docName(rs.getString("doc_name"))
+                        .kbId(rs.getString("kb_id"))
+                        .kbName(rs.getString("kb_name"))
+                        .sourceUrl(resolveSourceUrl(rs.getString("source_location"), rs.getString("file_url")))
+                        .chunkIndex((Integer) rs.getObject("chunk_index"))
                         .build(),
                 vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
         );
+    }
+
+    private Map<String, Object> parseMetadata(String metadata) {
+        if (!StringUtils.hasText(metadata)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(metadata, new TypeReference<Map<String, Object>>() {
+            });
+        } catch (Exception e) {
+            log.warn("解析向量元数据失败: {}", metadata, e);
+            return Map.of();
+        }
+    }
+
+    private String resolveSourceUrl(String sourceLocation, String fileUrl) {
+        if (StringUtils.hasText(sourceLocation)) {
+            return sourceLocation;
+        }
+        return fileUrl;
     }
 
     private float[] normalize(float[] vector) {

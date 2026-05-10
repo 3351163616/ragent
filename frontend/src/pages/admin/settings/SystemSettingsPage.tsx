@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +52,8 @@ import type {
 import {
   getSystemSettings,
   updateAIModelSelection,
-  updateAIProviders
+  updateAIProviders,
+  updateRAGCitationSettings
 } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 
@@ -216,6 +218,8 @@ export function SystemSettingsPage() {
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
   const [modelSelection, setModelSelection] = useState<AIModelSelection>(emptyModelSelection);
   const [modelSelectionSaving, setModelSelectionSaving] = useState(false);
+  const [citationEnabled, setCitationEnabled] = useState(false);
+  const [citationSaving, setCitationSaving] = useState(false);
 
   const loadSettings = async () => {
     try {
@@ -245,6 +249,7 @@ export function SystemSettingsPage() {
       embeddingDefaultModel: settings.ai.embedding.defaultModel || "",
       rerankDefaultModel: settings.ai.rerank.defaultModel || ""
     });
+    setCitationEnabled(Boolean(settings.rag.citations?.enabled));
   }, [settings]);
 
   if (loading) {
@@ -284,6 +289,7 @@ export function SystemSettingsPage() {
     modelSelection.chatInternalModel !== (ai.chat.internalModel || ai.chat.defaultModel || "") ||
     modelSelection.embeddingDefaultModel !== (ai.embedding.defaultModel || "") ||
     modelSelection.rerankDefaultModel !== (ai.rerank.defaultModel || "");
+  const citationChanged = citationEnabled !== Boolean(rag.citations?.enabled);
   const providerUsageMap = currentModelUsages.reduce<Record<string, CurrentModelUsage[]>>(
     (acc, usage) => {
       if (usage.provider) {
@@ -433,6 +439,30 @@ export function SystemSettingsPage() {
     }
   };
 
+  const handleCitationSave = async () => {
+    try {
+      setCitationSaving(true);
+      const updated = await updateRAGCitationSettings(citationEnabled);
+      setSettings((prev) =>
+        prev
+          ? {
+              ...prev,
+              rag: {
+                ...prev.rag,
+                citations: updated
+              }
+            }
+          : prev
+      );
+      toast.success("引用来源设置已保存");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "保存引用来源设置失败"));
+      console.error(error);
+    } finally {
+      setCitationSaving(false);
+    }
+  };
+
   return (
     <div className="admin-page">
       <div className="admin-page-header">
@@ -467,6 +497,28 @@ export function SystemSettingsPage() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <InfoItem label="Enabled" value={<BoolBadge value={rag.queryRewrite.enabled} />} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>答案引用来源</CardTitle>
+            <CardDescription>控制知识库问答是否注入并展示文档来源</CardDescription>
+          </div>
+          <Button onClick={handleCitationSave} disabled={citationSaving || !citationChanged}>
+            保存引用设置
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-center gap-3 rounded-lg border border-slate-200/70 bg-white px-4 py-3">
+            <Checkbox
+              checked={citationEnabled}
+              onCheckedChange={(checked) => setCitationEnabled(checked === true)}
+            />
+            <span className="text-sm font-medium text-slate-800">启用答案引用来源</span>
+            <BoolBadge value={Boolean(rag.citations?.enabled)} />
+          </label>
         </CardContent>
       </Card>
 

@@ -151,6 +151,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 .content(message.getContent())
                 .thinkingContent(message.getThinkingContent())
                 .thinkingDuration(message.getThinkingDuration())
+                .citationsJson(message.getCitationsJson())
                 .build();
         String messageId = conversationMessageService.addMessage(conversationMessage);
 

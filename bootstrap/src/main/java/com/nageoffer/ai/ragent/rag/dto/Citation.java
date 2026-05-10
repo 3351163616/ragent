@@ -15,68 +15,69 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.controller.vo;
+package com.nageoffer.ai.ragent.rag.dto;
 
-import com.nageoffer.ai.ragent.rag.dto.Citation;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Date;
-import java.util.List;
-
 /**
- * 会话消息视图对象
+ * 回答引用来源
  */
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class ConversationMessageVO {
+public class Citation {
 
     /**
-     * 消息ID
+     * 回答中的引用编号，对应模型输出里的 [n]
      */
-    private String id;
+    private Integer index;
 
     /**
-     * 会话ID
+     * 命中的 chunk ID
      */
-    private String conversationId;
+    private String chunkId;
 
     /**
-     * 角色 (如: user, assistant)
+     * 文档 ID
      */
-    private String role;
+    private String docId;
 
     /**
-     * 消息内容
+     * 文档名称
      */
-    private String content;
+    private String docName;
 
     /**
-     * 深度思考内容
+     * 知识库 ID
      */
-    private String thinkingContent;
+    private String kbId;
 
     /**
-     * 深度思考耗时（秒）
+     * 知识库名称
      */
-    private Integer thinkingDuration;
+    private String kbName;
 
     /**
-     * 反馈值：1=点赞，-1=点踩，null=未反馈
+     * 分块序号
      */
-    private Integer vote;
+    private Integer chunkIndex;
 
     /**
-     * 引用来源列表
+     * 来源地址
      */
-    private List<Citation> citations;
+    private String sourceUrl;
 
     /**
-     * 创建时间
+     * 检索得分
      */
-    private Date createTime;
+    private Float score;
+
+    /**
+     * 展示用文本片段
+     */
+    private String snippet;
 }

@@ -34,6 +34,8 @@ import org.springframework.context.annotation.Configuration;
  * rag:
  *   query-rewrite:
  *     enabled: true
+ *   answer-citation:
+ *     enabled: true
  * </pre>
  */
 @Data
@@ -48,4 +50,13 @@ public class RAGConfigProperties {
      */
     @Value("${rag.query-rewrite.enabled:true}")
     private Boolean queryRewriteEnabled;
+
+    /**
+     * 回答引用来源开关
+     * <p>
+     * 控制是否在知识库证据中注入来源编号，并在流式完成事件和历史消息中返回 citations 数组
+     * 默认值：{@code true}
+     */
+    @Value("${rag.answer-citation.enabled:true}")
+    private Boolean answerCitationEnabled;
 }

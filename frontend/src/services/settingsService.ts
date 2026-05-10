@@ -14,6 +14,9 @@ export interface SystemSettings {
     queryRewrite: {
       enabled: boolean;
     };
+    citations: {
+      enabled: boolean;
+    };
     rateLimit: {
       global: {
         enabled: boolean;
@@ -95,4 +98,11 @@ export async function updateAIProviders(providers: AIProviders): Promise<AIProvi
 
 export async function updateAIModelSelection(selection: AIModelSelection): Promise<AISettings> {
   return api.put<AISettings, AISettings>("/rag/settings/ai/model-selection", selection);
+}
+
+export async function updateRAGCitationSettings(enabled: boolean): Promise<SystemSettings["rag"]["citations"]> {
+  return api.put<SystemSettings["rag"]["citations"], SystemSettings["rag"]["citations"]>(
+    "/rag/settings/rag/citations",
+    { enabled }
+  );
 }

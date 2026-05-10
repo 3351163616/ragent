@@ -15,54 +15,21 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.service.bo;
+package com.nageoffer.ai.ragent.rag.service.handler;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.nageoffer.ai.ragent.rag.dto.Citation;
+
+import java.util.List;
 
 /**
- * 对话消息业务对象
+ * 支持注入回答引用来源的流式回调
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class ConversationMessageBO {
+public interface CitationAwareStreamCallback {
 
     /**
-     * 对话ID
+     * 设置本轮回答的引用来源
+     *
+     * @param citations 引用来源列表
      */
-    private String conversationId;
-
-    /**
-     * 用户ID
-     */
-    private String userId;
-
-    /**
-     * 角色：system/user/assistant
-     */
-    private String role;
-
-    /**
-     * 消息内容
-     */
-    private String content;
-
-    /**
-     * 深度思考内容
-     */
-    private String thinkingContent;
-
-    /**
-     * 深度思考耗时（秒）
-     */
-    private Integer thinkingDuration;
-
-    /**
-     * 引用来源 JSON
-     */
-    private String citationsJson;
+    void setCitations(List<Citation> citations);
 }

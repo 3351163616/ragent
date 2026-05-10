@@ -27,12 +27,15 @@ import com.nageoffer.ai.ragent.rag.config.RAGDefaultProperties;
 import com.nageoffer.ai.ragent.rag.config.RAGRateLimitProperties;
 import com.nageoffer.ai.ragent.rag.controller.request.AIModelSelectionUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.request.AIProvidersUpdateRequest;
+import com.nageoffer.ai.ragent.rag.controller.request.RAGCitationSettingsUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.AISettings;
+import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.CitationSettings;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.DefaultSettings;
 import com.nageoffer.ai.ragent.rag.controller.vo.SystemSettingsVO.MemorySettings;
 import com.nageoffer.ai.ragent.rag.service.AIModelSelectionConfigService;
 import com.nageoffer.ai.ragent.rag.service.AIProviderConfigService;
+import com.nageoffer.ai.ragent.rag.service.RAGFeatureConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
@@ -60,6 +63,7 @@ public class RAGSettingsController {
     private final AIModelProperties aiModelProperties;
     private final AIProviderConfigService aiProviderConfigService;
     private final AIModelSelectionConfigService aiModelSelectionConfigService;
+    private final RAGFeatureConfigService ragFeatureConfigService;
 
     @Value("${spring.servlet.multipart.max-file-size:50MB}")
     private DataSize maxFileSize;
@@ -81,6 +85,9 @@ public class RAGSettingsController {
                         .defaultConfig(toDefaultSettings(ragDefaultProperties))
                         .queryRewrite(SystemSettingsVO.QueryRewriteSettings.builder()
                                 .enabled(ragConfigProperties.getQueryRewriteEnabled())
+                                .build())
+                        .citations(CitationSettings.builder()
+                                .enabled(ragConfigProperties.getAnswerCitationEnabled())
                                 .build())
                         .rateLimit(SystemSettingsVO.RateLimitSettings.builder()
                                 .global(SystemSettingsVO.GlobalRateLimit.builder()
@@ -115,6 +122,17 @@ public class RAGSettingsController {
     public Result<AISettings> updateAIModelSelection(@RequestBody AIModelSelectionUpdateRequest request) {
         aiModelSelectionConfigService.updateSelection(request);
         return Results.success(toAISettings(aiModelProperties));
+    }
+
+    /**
+     * 更新 RAG 回答引用来源开关，立即影响当前进程内的后续对话。
+     */
+    @PutMapping("/rag/settings/rag/citations")
+    public Result<CitationSettings> updateCitationSettings(@RequestBody RAGCitationSettingsUpdateRequest request) {
+        Boolean enabled = ragFeatureConfigService.updateCitationSettings(request);
+        return Results.success(CitationSettings.builder()
+                .enabled(enabled)
+                .build());
     }
 
     private DefaultSettings toDefaultSettings(RAGDefaultProperties props) {

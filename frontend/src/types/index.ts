@@ -4,6 +4,19 @@ export type FeedbackValue = "like" | "dislike" | null;
 
 export type MessageStatus = "streaming" | "done" | "cancelled" | "error";
 
+export interface Citation {
+  index: number;
+  chunkId?: string | null;
+  docId?: string | null;
+  docName?: string | null;
+  kbId?: string | null;
+  kbName?: string | null;
+  chunkIndex?: number | null;
+  sourceUrl?: string | null;
+  score?: number | null;
+  snippet?: string | null;
+}
+
 export interface User {
   userId: string;
   username?: string;
@@ -31,6 +44,7 @@ export interface Message {
   createdAt?: string;
   feedback?: FeedbackValue;
   status?: MessageStatus;
+  citations?: Citation[];
 }
 
 export interface StreamMetaPayload {
@@ -46,4 +60,5 @@ export interface MessageDeltaPayload {
 export interface CompletionPayload {
   messageId?: string | null;
   title?: string | null;
+  citations?: Citation[] | null;
 }

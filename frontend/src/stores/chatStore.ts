@@ -95,7 +95,8 @@ function mapMessages(data: ConversationMessageVO[]): Message[] {
     isDeepThinking: Boolean(item.thinkingContent),
     createdAt: item.createTime,
     feedback: mapVoteToFeedback(item.vote),
-    status: "done"
+    status: "done",
+    citations: item.citations || []
   }));
 }
 
@@ -352,6 +353,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isThinking: deepThinkingEnabled,
       status: "streaming",
       feedback: null,
+      citations: [],
       createdAt: new Date().toISOString()
     };
 
@@ -440,6 +442,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     id: String(payload.messageId),
                     status: "done",
                     isThinking: false,
+                    citations: payload.citations || [],
                     thinkingDuration:
                       message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
                   }
@@ -454,6 +457,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     ...message,
                     status: "done",
                     isThinking: false,
+                    citations: payload.citations || [],
                     thinkingDuration:
                       message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
                   }
@@ -478,6 +482,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               content: message.content + suffix,
               status: "cancelled",
               isThinking: false,
+              citations: payload?.citations || [],
               thinkingDuration:
                 message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
             };

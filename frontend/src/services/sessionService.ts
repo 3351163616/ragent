@@ -1,4 +1,5 @@
 import { api } from "@/services/api";
+import type { Citation } from "@/types";
 
 export interface ConversationVO {
   conversationId: string;
@@ -13,6 +14,7 @@ export interface ConversationMessageVO {
   content: string;
   thinkingContent?: string | null;
   thinkingDuration?: number | null;
+  citations?: Citation[] | null;
   vote: number | null;
   createTime?: string;
 }

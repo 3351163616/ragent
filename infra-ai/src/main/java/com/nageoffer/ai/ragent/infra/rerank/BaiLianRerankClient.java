@@ -160,7 +160,7 @@ public class BaiLianRerankClient implements RerankClient {
                 score = item.get("relevance_score").getAsFloat();
             }
 
-            RetrievedChunk hit = score != null ? new RetrievedChunk(src.getId(), src.getText(), score) : src;
+            RetrievedChunk hit = score != null ? src.withScore(score) : src;
             reranked.add(hit);
             addedIds.add(src.getId());
 

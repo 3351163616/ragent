@@ -17,6 +17,7 @@
 
 package com.nageoffer.ai.ragent.rag.service.handler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
@@ -66,4 +67,9 @@ public class StreamChatHandlerParams {
      * 任务管理器
      */
     private final StreamTaskManager taskManager;
+
+    /**
+     * JSON 序列化器
+     */
+    private final ObjectMapper objectMapper;
 }
