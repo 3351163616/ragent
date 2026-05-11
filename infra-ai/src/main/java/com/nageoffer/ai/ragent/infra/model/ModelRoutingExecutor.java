@@ -62,6 +62,12 @@ public class ModelRoutingExecutor {
             try {
                 T response = caller.call(client, target);
                 healthStore.markSuccess(target.id());
+                log.info("当前使用{}模型: modelId={}, provider={}, model={}, priority={}",
+                        label,
+                        target.id(),
+                        target.candidate().getProvider(),
+                        target.candidate().getModel(),
+                        target.candidate().getPriority());
                 return response;
             } catch (Exception e) {
                 last = e;

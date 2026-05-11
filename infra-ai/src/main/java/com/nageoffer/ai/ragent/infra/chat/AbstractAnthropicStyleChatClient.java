@@ -118,11 +118,11 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                 modelStreamExecutor,
                 call,
                 callback,
-                cancelled -> doStream(call, callback, cancelled)
+                cancelled -> doStream(call, callback, cancelled, Boolean.TRUE.equals(request.getThinking()))
         );
     }
 
-    private void doStream(Call call, StreamCallback callback, AtomicBoolean cancelled) {
+    private void doStream(Call call, StreamCallback callback, AtomicBoolean cancelled, boolean reasoningEnabled) {
         try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 String body = HttpResponseHelper.readBody(response.body());
@@ -156,7 +156,7 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                         log.warn("{} 流式响应错误事件: {}", provider(), detail);
                         throw new ModelClientException(provider() + " 流式响应收到错误事件: " + detail, ModelClientErrorType.INVALID_RESPONSE, null);
                     }
-                    if (event.hasReasoning()) {
+                    if (reasoningEnabled && event.hasReasoning()) {
                         callback.onThinking(event.reasoning());
                     }
                     if (event.hasContent()) {

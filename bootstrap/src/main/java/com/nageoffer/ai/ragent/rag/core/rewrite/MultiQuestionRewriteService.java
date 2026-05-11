@@ -49,8 +49,9 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.QUERY_REWRITE_AND
  * <ol>
  *     <li><b>术语归一化</b>：通过 {@link QueryTermMappingService} 将用户口语化表达映射为标准术语
  *         （例如"社保" → "社会保险"），采用长词优先匹配策略避免短词误替换。</li>
- *     <li><b>LLM 改写 + 拆分</b>：将归一化后的问题连同最近 2 轮对话历史一起发送给 LLM，
- *         由 LLM 完成指代消解（如"它" → "OA系统"）并将复合问句拆分为独立子问题。
+ *     <li><b>LLM 改写 + 拆分 + 术语扩展</b>：将归一化后的问题连同最近 2 轮对话历史一起发送给 LLM，
+ *         由 LLM 完成指代消解（如"它" → "OA系统"）、同义术语扩展
+ *         （如"税号" → "税号（纳税人识别号、统一社会信用代码）"）并将复合问句拆分为独立子问题。
  *         LLM 返回 JSON 格式：{@code {"rewrite": "...", "sub_questions": ["...", "..."]}}。</li>
  *     <li><b>兜底规则拆分</b>：当查询改写开关关闭或 LLM 调用/解析失败时，回退为基于标点符号的规则拆分。</li>
  * </ol>
@@ -120,7 +121,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
      * <ol>
      *     <li>检查查询改写开关，若关闭则仅做术语归一化 + 规则拆分</li>
      *     <li>先对用户问题进行术语归一化</li>
-     *     <li>将归一化后的问题连同会话历史发送给 LLM 完成改写和拆分</li>
+     *     <li>将归一化后的问题连同会话历史发送给 LLM 完成改写、术语扩展和拆分</li>
      * </ol>
      *
      * @param userQuestion 原始用户问题
@@ -167,7 +168,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     }
 
     /**
-     * 调用 LLM 完成查询改写和多问句拆分的核心方法。
+     * 调用 LLM 完成查询改写、术语扩展和多问句拆分的核心方法。
      * <p>
      * 流程：
      * <ol>
