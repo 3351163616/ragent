@@ -52,7 +52,6 @@ public class BaiLianChatClient extends AbstractOpenAIStyleChatClient {
     }
 
     @Override
-    @RagTraceNode(name = "bailian-stream-chat", type = "LLM_PROVIDER")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         return doStreamChat(request, callback, target);
     }

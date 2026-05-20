@@ -54,6 +54,11 @@ public enum ModelProvider {
     NEW_API("newapi"),
 
     /**
+     * 推理时代 AI 模型服务
+     */
+    AI_HUB_MIX("aihubmix"),
+
+    /**
      * 空实现，用于测试或占位
      */
     NOOP("noop");

@@ -79,6 +79,8 @@ public class RoutingLLMService implements LLMService {
     private final ModelHealthStore healthStore;
     /** 路由执行器，封装同步调用的降级循环逻辑 */
     private final ModelRoutingExecutor executor;
+    /** 首包探测器，作为独立 bean 让 @RagTraceNode AOP 拦截生效 */
+    private final LlmFirstPacketProbe firstPacketProbe;
     /** 按提供商名称索引的 ChatClient 映射表，key 为 provider 标识 */
     private final Map<String, ChatClient> clientsByProvider;
 
@@ -97,10 +99,12 @@ public class RoutingLLMService implements LLMService {
             ModelSelector selector,
             ModelHealthStore healthStore,
             ModelRoutingExecutor executor,
+            LlmFirstPacketProbe firstPacketProbe,
             List<ChatClient> clients) {
         this.selector = selector;
         this.healthStore = healthStore;
         this.executor = executor;
+        this.firstPacketProbe = firstPacketProbe;
         this.clientsByProvider = clients.stream()
                 .collect(Collectors.toMap(ChatClient::provider, Function.identity()));
     }
@@ -227,7 +231,6 @@ public class RoutingLLMService implements LLMService {
 
             ProbeStreamBridge.ProbeResult result = awaitFirstPacket(bridge, handle, callback);
 
-
             if (result.isSuccess()) {
                 healthStore.markSuccess(target.id());
                 log.info("当前使用{}模型: modelId={}, provider={}, model={}, priority={}",
@@ -270,7 +273,7 @@ public class RoutingLLMService implements LLMService {
                                                            StreamCancellationHandle handle,
                                                            StreamCallback callback) {
         try {
-            return bridge.awaitFirstPacket(FIRST_PACKET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return firstPacketProbe.awaitFirstPacket(bridge, FIRST_PACKET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             handle.cancel();

@@ -56,7 +56,6 @@ public class OllamaChatClient extends AbstractOpenAIStyleChatClient {
     }
 
     @Override
-    @RagTraceNode(name = "ollama-stream-chat", type = "LLM_PROVIDER")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         return doStreamChat(request, callback, target);
     }

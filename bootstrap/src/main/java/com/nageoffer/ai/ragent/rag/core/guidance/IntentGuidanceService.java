@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.rag.core.guidance;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.rag.config.GuidanceProperties;
 import com.nageoffer.ai.ragent.rag.constant.RAGConstant;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
@@ -58,9 +59,9 @@ public class IntentGuidanceService {
 
     /** Prompt 模板加载器，用于渲染澄清提示模板 */
     private final PromptTemplateLoader promptTemplateLoader;
-
     private final AmbiguityLLMChecker ambiguityLLMChecker;
 
+    @RagTraceNode(name = "guidance-detect", type = "GUIDANCE")
     public GuidanceDecision detectAmbiguity(String question, List<SubQuestionIntent> subIntents) {
         if (!Boolean.TRUE.equals(guidanceProperties.getEnabled())) {
             return GuidanceDecision.none();
@@ -120,6 +121,7 @@ public class IntentGuidanceService {
             return true;
         }
 
+        // 快速通道 1：分数比值低于边界下限，意图明确
         double ratio = ranked.get(1).getScore() / top;
         double threshold = Optional.ofNullable(guidanceProperties.getAmbiguityScoreRatio()).orElse(0.8D);
         double margin = Optional.ofNullable(guidanceProperties.getAmbiguityMargin()).orElse(0.15D);
@@ -128,6 +130,7 @@ public class IntentGuidanceService {
             return true;
         }
 
+        // 快速通道 2：用户问题中显式提到了某个系统的 DOMAIN 级名称
         if (StrUtil.isNotBlank(question)) {
             List<String> domainNames = ranked.stream()
                     .map(ns -> resolveDomainName(ns.getNode()))
@@ -169,6 +172,7 @@ public class IntentGuidanceService {
             return ambiguityLLMChecker.checkAmbiguity(question, ranked);
         }
 
+        // ratio < threshold - margin 但 > skipThreshold，不触发澄清
         return false;
     }
 

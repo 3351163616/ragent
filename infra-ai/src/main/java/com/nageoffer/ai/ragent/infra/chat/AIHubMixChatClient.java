@@ -17,7 +17,6 @@
 
 package com.nageoffer.ai.ragent.infra.chat;
 
-import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
 import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
@@ -31,22 +30,22 @@ import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
-public class SiliconFlowChatClient extends AbstractOpenAIStyleChatClient {
+public class AIHubMixChatClient extends AbstractOpenAIStyleChatClient {
 
-    public SiliconFlowChatClient(OkHttpClient syncHttpClient,
-                                 OkHttpClient streamingHttpClient,
-                                 Executor modelStreamExecutor,
-                                 LLMRequestLogger requestLogger) {
+    public AIHubMixChatClient(OkHttpClient syncHttpClient,
+                              OkHttpClient streamingHttpClient,
+                              Executor modelStreamExecutor,
+                              LLMRequestLogger requestLogger) {
         super(syncHttpClient, streamingHttpClient, modelStreamExecutor, requestLogger);
     }
 
     @Override
     public String provider() {
-        return ModelProvider.SILICON_FLOW.getId();
+        return ModelProvider.AI_HUB_MIX.getId();
     }
 
     @Override
-    @RagTraceNode(name = "siliconflow-chat", type = "LLM_PROVIDER")
+    @RagTraceNode(name = "aihubmix-chat", type = "LLM_PROVIDER")
     public String chat(ChatRequest request, ModelTarget target) {
         return doChat(request, target);
     }
@@ -54,10 +53,5 @@ public class SiliconFlowChatClient extends AbstractOpenAIStyleChatClient {
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         return doStreamChat(request, callback, target);
-    }
-
-    @Override
-    protected void customizeRequestBody(JsonObject body, ChatRequest request) {
-        body.addProperty("enable_thinking", Boolean.TRUE.equals(request.getThinking()));
     }
 }
