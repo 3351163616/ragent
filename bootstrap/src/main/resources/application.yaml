@@ -20,16 +20,19 @@ spring:
     url: ${POSTGRES_JDBC_URL:jdbc:postgresql://127.0.0.1:15432/ragent?client_encoding=UTF8}
     hikari:
       connection-timeout: 5000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      keepalive-time: 30000
       maximum-pool-size: 10
       minimum-idle: 5
       pool-name: RagentHikariPool
+      data-source-properties:
+        tcpKeepAlive: true
 
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:16379}
+      port: ${REDIS_PORT:6379}
 
 rocketmq:
   name-server: ${ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
@@ -183,12 +186,87 @@ ai:
         provider: glm
         model: glm-5.1
         supports-thinking: true
-        priority: 2
+        priority: 1
       - id: mimo-v2.5-pro
         provider: mimo
         model: mimo-v2.5-pro
         supports-thinking: true
+        priority: 1
+      - id: minimax-m2.7
+        provider: newapi
+        model: minimax-m2.7
+        supports-thinking: true
+        priority: 1
+      - id: minimax-m2.5
+        provider: newapi
+        model: minimax-m2.5
+        supports-thinking: true
+        priority: 1
+      - id: kimi-k2.6
+        provider: newapi
+        model: kimi-k2.6
+        supports-thinking: true
+        priority: 1
+      - id: kimi-k2.5
+        provider: newapi
+        model: kimi-k2.5
+        supports-thinking: true
+        priority: 1
+      - id: glm-5.1-newapi
+        provider: newapi
+        model: glm-5.1
+        supports-thinking: true
+        priority: 1
+      - id: glm-5
+        provider: newapi
+        model: glm-5
+        supports-thinking: true
+        priority: 1
+      - id: deepseek-v4-pro
+        provider: newapi
+        model: deepseek-v4-pro
+        supports-thinking: true
         priority: 0
+      - id: deepseek-v4-flash
+        provider: newapi
+        model: deepseek-v4-flash
+        supports-thinking: true
+        priority: 1
+      - id: qwen3.6-plus
+        provider: newapi
+        model: qwen3.6-plus
+        supports-thinking: true
+        priority: 1
+      - id: qwen3.5-plus
+        provider: newapi
+        model: qwen3.5-plus
+        supports-thinking: true
+        priority: 1
+      - id: mimo-v2-pro
+        provider: newapi
+        model: mimo-v2-pro
+        supports-thinking: true
+        priority: 1
+      - id: mimo-v2-omni
+        provider: newapi
+        model: mimo-v2-omni
+        supports-thinking: true
+        priority: 1
+      - id: mimo-v2.5-pro-newapi
+        provider: newapi
+        model: mimo-v2.5-pro
+        supports-thinking: true
+        priority: 1
+      - id: mimo-v2.5
+        provider: newapi
+        model: mimo-v2.5
+        supports-thinking: true
+        priority: 1
+      - id: hy3-preview
+        provider: newapi
+        model: hy3-preview
+        supports-thinking: true
+        priority: 1
 
   embedding:
     default-model: bge-m3
