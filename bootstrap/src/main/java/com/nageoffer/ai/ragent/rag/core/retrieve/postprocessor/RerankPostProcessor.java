@@ -66,10 +66,13 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
             return chunks;
         }
 
+        int topN = context.getTopK();
+        log.info("Rerank 开始 - 送 reranker 候选数：{}，请求 top_n：{}", chunks.size(), topN);
+
         List<RetrievedChunk> reranked = rerankService.rerank(
                 context.getMainQuestion(),
                 chunks,
-                context.getTopK()
+                topN
         );
         return filterByMinScore(reranked);
     }
@@ -89,7 +92,7 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
                 .toList();
 
         if (filtered.size() != chunks.size()) {
-            log.info("Rerank 分数过滤完成，阈值：{}，输入：{}，输出：{}",
+            log.info("Rerank 阈值过滤完成，阈值：{}，rerank 返回：{}，阈值后保留：{}",
                     minScore, chunks.size(), filtered.size());
         }
         return filtered;
