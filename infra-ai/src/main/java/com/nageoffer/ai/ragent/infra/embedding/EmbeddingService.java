@@ -51,6 +51,20 @@ public interface EmbeddingService {
     List<Float> embed(String text);
 
     /**
+     * 对单个文本进行向量化，并返回实际使用的模型元数据。
+     *
+     * @param text 待向量化文本
+     * @return 向量和路由元数据
+     */
+    default EmbeddingResult embedWithMetadata(String text) {
+        List<Float> embedding = embed(text);
+        return EmbeddingResult.builder()
+                .embedding(embedding)
+                .embeddingDimension(embedding == null ? 0 : embedding.size())
+                .build();
+    }
+
+    /**
      * 指定模型对单个文本进行向量化（不进行重试或降级）
      *
      * @param text    待向量化文本
@@ -58,6 +72,22 @@ public interface EmbeddingService {
      * @return 文本对应的向量
      */
     List<Float> embed(String text, String modelId);
+
+    /**
+     * 指定模型对单个文本进行向量化，并返回实际使用的模型元数据。
+     *
+     * @param text    待向量化文本
+     * @param modelId 指定的模型ID
+     * @return 向量和路由元数据
+     */
+    default EmbeddingResult embedWithMetadata(String text, String modelId) {
+        List<Float> embedding = embed(text, modelId);
+        return EmbeddingResult.builder()
+                .embedding(embedding)
+                .embeddingModelId(modelId)
+                .embeddingDimension(embedding == null ? 0 : embedding.size())
+                .build();
+    }
 
     /**
      * 对多个文本进行批量向量化

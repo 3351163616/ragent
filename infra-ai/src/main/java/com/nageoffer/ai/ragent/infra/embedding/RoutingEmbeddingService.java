@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.infra.embedding;
 
 import com.nageoffer.ai.ragent.infra.enums.ModelCapability;
 import com.nageoffer.ai.ragent.framework.exception.RemoteException;
+import com.nageoffer.ai.ragent.infra.model.ModelRouteResult;
 import com.nageoffer.ai.ragent.infra.model.ModelRoutingExecutor;
 import com.nageoffer.ai.ragent.infra.model.ModelSelector;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
@@ -57,22 +58,34 @@ public class RoutingEmbeddingService implements EmbeddingService {
 
     @Override
     public List<Float> embed(String text) {
-        return executor.executeWithFallback(
+        return embedWithMetadata(text).getEmbedding();
+    }
+
+    @Override
+    public EmbeddingResult embedWithMetadata(String text) {
+        ModelRouteResult<List<Float>> result = executor.executeWithFallbackResult(
                 ModelCapability.EMBEDDING,
                 selector.selectEmbeddingCandidates(),
                 this::resolveClient,
                 (client, target) -> client.embed(text, target)
         );
+        return buildEmbeddingResult(result);
     }
 
     @Override
     public List<Float> embed(String text, String modelId) {
-        return executor.executeWithFallback(
+        return embedWithMetadata(text, modelId).getEmbedding();
+    }
+
+    @Override
+    public EmbeddingResult embedWithMetadata(String text, String modelId) {
+        ModelRouteResult<List<Float>> result = executor.executeWithFallbackResult(
                 ModelCapability.EMBEDDING,
                 List.of(resolveTarget(modelId)),
                 this::resolveClient,
                 (client, target) -> client.embed(text, target)
         );
+        return buildEmbeddingResult(result);
     }
 
     @Override
@@ -107,5 +120,21 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 .filter(target -> modelId.equals(target.id()))
                 .findFirst()
                 .orElseThrow(() -> new RemoteException("Embedding 模型不可用: " + modelId));
+    }
+
+    private EmbeddingResult buildEmbeddingResult(ModelRouteResult<List<Float>> result) {
+        List<Float> embedding = result.response();
+        ModelTarget target = result.target();
+        Integer configuredDimension = target.candidate().getDimension();
+        return EmbeddingResult.builder()
+                .embedding(embedding)
+                .embeddingModelId(target.id())
+                .embeddingProvider(target.candidate().getProvider())
+                .embeddingDimension(
+                        configuredDimension != null && configuredDimension > 0
+                                ? configuredDimension
+                                : embedding == null ? 0 : embedding.size()
+                )
+                .build();
     }
 }

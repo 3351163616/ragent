@@ -18,6 +18,7 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel;
 
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.rag.core.retrieve.QueryEmbedding;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -61,6 +62,28 @@ public abstract class AbstractParallelRetriever<T> {
     public final List<RetrievedChunk> executeParallelRetrieval(String question,
                                                                List<T> targets,
                                                                int topK) {
+        return executeParallelRetrieval(null, question, targets, topK);
+    }
+
+    /**
+     * 并行检索模板方法，优先从 SearchContext 复用 Query Embedding。
+     *
+     * @param context 检索上下文
+     * @param targets 检索目标列表
+     * @param topK    每个目标的 TopK
+     * @return 合并后的检索结果
+     */
+    public final List<RetrievedChunk> executeParallelRetrieval(SearchContext context,
+                                                               List<T> targets,
+                                                               int topK) {
+        String question = context == null ? null : context.getMainQuestion();
+        return executeParallelRetrieval(context, question, targets, topK);
+    }
+
+    private List<RetrievedChunk> executeParallelRetrieval(SearchContext context,
+                                                          String question,
+                                                          List<T> targets,
+                                                          int topK) {
         // 1. 创建 Future 列表
         record RetrievalFuture<T>(T target, CompletableFuture<List<RetrievedChunk>> future) {
         }
@@ -68,7 +91,7 @@ public abstract class AbstractParallelRetriever<T> {
         List<RetrievalFuture<T>> futures = targets.stream()
                 .map(target -> {
                     CompletableFuture<List<RetrievedChunk>> future = CompletableFuture.supplyAsync(
-                            () -> createRetrievalTask(question, target, topK),
+                            () -> createRetrievalTask(context, question, target, topK),
                             executor
                     );
                     return new RetrievalFuture<>(target, future);
@@ -98,6 +121,48 @@ public abstract class AbstractParallelRetriever<T> {
         return allChunks;
     }
 
+    private List<RetrievedChunk> createRetrievalTask(SearchContext context, String question, T target, int topK) {
+        QueryEmbedding queryEmbedding = resolveQueryEmbedding(context, question, target);
+        if (queryEmbedding == null) {
+            return createRetrievalTask(question, target, topK);
+        }
+        return createRetrievalTask(question, target, topK, queryEmbedding);
+    }
+
+    private QueryEmbedding resolveQueryEmbedding(SearchContext context, String question, T target) {
+        String targetIdentifier = getTargetIdentifier(target);
+        if (context == null) {
+            log.warn("{} 未传入 SearchContext，目标 {} fallback 到旧检索逻辑并在 target 内部 embed(query)",
+                    getStatisticsName(), targetIdentifier);
+            return null;
+        }
+        if (context.getQueryEmbeddingContext() == null) {
+            log.warn("{} SearchContext 缺少 QueryEmbeddingContext，目标 {} fallback 到旧检索逻辑并在 target 内部 embed(query)",
+                    getStatisticsName(), targetIdentifier);
+            return null;
+        }
+
+        try {
+            QueryEmbedding embedding = context.getQueryEmbeddingContext().getOrCreate(
+                    getTargetQuery(question, target),
+                    getEmbeddingModelId(target),
+                    getStatisticsName(),
+                    targetIdentifier
+            );
+            log.info("{} 使用共享 Query Embedding - 目标: {}, modelId: {}, provider: {}, dimension: {}",
+                    getStatisticsName(),
+                    targetIdentifier,
+                    embedding.getEmbeddingModelId(),
+                    embedding.getEmbeddingProvider(),
+                    embedding.getEmbeddingDimension());
+            return embedding;
+        } catch (Exception e) {
+            log.warn("{} 获取 Query Embedding 失败，目标 {} fallback 到旧检索逻辑，原因: {}",
+                    getStatisticsName(), targetIdentifier, e.getMessage(), e);
+            return null;
+        }
+    }
+
     /**
      * 创建单个检索任务（子类实现）
      * 注意：此方法内部应包含异常处理，失败时返回空列表
@@ -108,6 +173,37 @@ public abstract class AbstractParallelRetriever<T> {
      * @return 检索结果列表
      */
     protected abstract List<RetrievedChunk> createRetrievalTask(String question, T target, int topK);
+
+    /**
+     * 使用已生成的 Query Embedding 创建单个检索任务。
+     * 默认回退到旧逻辑，子类可覆写为 retrieveByVector。
+     *
+     * @param question       查询问题
+     * @param target         检索目标
+     * @param topK           TopK
+     * @param queryEmbedding 可复用的 Query Embedding
+     * @return 检索结果列表
+     */
+    protected List<RetrievedChunk> createRetrievalTask(String question,
+                                                       T target,
+                                                       int topK,
+                                                       QueryEmbedding queryEmbedding) {
+        return createRetrievalTask(question, target, topK);
+    }
+
+    /**
+     * 获取目标所需的 embedding 模型 ID。
+     */
+    protected String getEmbeddingModelId(T target) {
+        return null;
+    }
+
+    /**
+     * 获取目标专属 query，默认使用通道主 query。
+     */
+    protected String getTargetQuery(String question, T target) {
+        return question;
+    }
 
     /**
      * 获取目标标识（用于日志）

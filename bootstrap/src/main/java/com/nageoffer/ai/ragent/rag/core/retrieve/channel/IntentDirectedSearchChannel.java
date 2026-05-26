@@ -18,19 +18,24 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
+import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScoreFilters;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieverService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.strategy.IntentParallelRetriever;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.stream.Collectors;
 
 /**
  * 意图定向检索通道
@@ -43,12 +48,15 @@ import java.util.concurrent.Executor;
 public class IntentDirectedSearchChannel implements SearchChannel {
 
     private final SearchChannelProperties properties;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final IntentParallelRetriever parallelRetriever;
 
     public IntentDirectedSearchChannel(RetrieverService retrieverService,
                                        SearchChannelProperties properties,
+                                       KnowledgeBaseMapper knowledgeBaseMapper,
                                        Executor innerRetrievalExecutor) {
         this.properties = properties;
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.parallelRetriever = new IntentParallelRetriever(retrieverService, innerRetrievalExecutor);
     }
 
@@ -80,6 +88,37 @@ public class IntentDirectedSearchChannel implements SearchChannel {
     }
 
     @Override
+    public List<SearchTarget> resolveSearchTargets(SearchContext context) {
+        List<NodeScore> kbIntents = extractKbIntents(context);
+        if (CollUtil.isEmpty(kbIntents)) {
+            return List.of();
+        }
+
+        Map<String, KnowledgeBaseDO> kbByCollection = loadKnowledgeBases(kbIntents).stream()
+                .filter(kb -> StrUtil.isNotBlank(kb.getCollectionName()))
+                .collect(Collectors.toMap(
+                        KnowledgeBaseDO::getCollectionName,
+                        kb -> kb,
+                        (left, right) -> left
+                ));
+
+        return kbIntents.stream()
+                .map(nodeScore -> {
+                    var node = nodeScore.getNode();
+                    KnowledgeBaseDO kb = node == null ? null : kbByCollection.get(node.getCollectionName());
+                    return SearchTarget.builder()
+                            .channelName(getName())
+                            .targetId(node == null ? null : node.getId())
+                            .targetName(node == null ? null : node.getName())
+                            .collectionName(node == null ? null : node.getCollectionName())
+                            .embeddingModelId(kb == null ? null : kb.getEmbeddingModel())
+                            .query(context.getMainQuestion())
+                            .build();
+                })
+                .toList();
+    }
+
+    @Override
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();
 
@@ -102,7 +141,7 @@ public class IntentDirectedSearchChannel implements SearchChannel {
             // 并行检索所有意图对应的知识库
             int topKMultiplier = properties.getChannels().getIntentDirected().getTopKMultiplier();
             List<RetrievedChunk> allChunks = retrieveByIntents(
-                    context.getMainQuestion(),
+                    context,
                     kbIntents,
                     context.getTopK(),
                     topKMultiplier
@@ -151,11 +190,32 @@ public class IntentDirectedSearchChannel implements SearchChannel {
     /**
      * 根据意图列表并行检索
      */
-    private List<RetrievedChunk> retrieveByIntents(String question,
+    private List<RetrievedChunk> retrieveByIntents(SearchContext context,
                                                    List<NodeScore> kbIntents,
                                                    int fallbackTopK,
                                                    int topKMultiplier) {
+        List<SearchTarget> searchTargets = context.getSearchTargets(getName());
+        if (CollUtil.isEmpty(searchTargets)) {
+            searchTargets = resolveSearchTargets(context);
+        }
         // 使用模板方法执行并行检索
-        return parallelRetriever.executeParallelRetrieval(question, kbIntents, fallbackTopK, topKMultiplier);
+        return parallelRetriever.executeParallelRetrieval(context, kbIntents, fallbackTopK, topKMultiplier, searchTargets);
+    }
+
+    private List<KnowledgeBaseDO> loadKnowledgeBases(List<NodeScore> kbIntents) {
+        Set<String> collectionNames = kbIntents.stream()
+                .map(NodeScore::getNode)
+                .filter(node -> node != null && StrUtil.isNotBlank(node.getCollectionName()))
+                .map(node -> node.getCollectionName())
+                .collect(Collectors.toSet());
+        if (collectionNames.isEmpty()) {
+            return List.of();
+        }
+        return knowledgeBaseMapper.selectList(
+                new QueryWrapper<KnowledgeBaseDO>()
+                        .select("id", "collection_name", "embedding_model")
+                        .in("collection_name", collectionNames)
+                        .eq("deleted", 0)
+        );
     }
 }

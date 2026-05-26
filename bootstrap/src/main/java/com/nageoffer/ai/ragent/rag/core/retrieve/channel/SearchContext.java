@@ -18,12 +18,15 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel;
 
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
+import com.nageoffer.ai.ragent.rag.core.retrieve.QueryEmbeddingContext;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 检索上下文
@@ -60,15 +63,34 @@ public class SearchContext {
     private int topK;
 
     /**
+     * Query Embedding 复用上下文。
+     */
+    private QueryEmbeddingContext queryEmbeddingContext;
+
+    /**
      * 扩展元数据
      */
     @Builder.Default
     private Map<String, Object> metadata = new HashMap<>();
 
     /**
+     * 各通道预解析出来的检索目标。
+     */
+    @Builder.Default
+    private Map<String, List<SearchTarget>> searchTargets = new ConcurrentHashMap<>();
+
+    /**
      * 获取主问题（优先使用重写后的问题）
      */
     public String getMainQuestion() {
         return rewrittenQuestion != null ? rewrittenQuestion : originalQuestion;
+    }
+
+    public void putSearchTargets(String channelName, List<SearchTarget> targets) {
+        searchTargets.put(channelName, targets == null ? List.of() : targets);
+    }
+
+    public List<SearchTarget> getSearchTargets(String channelName) {
+        return searchTargets.getOrDefault(channelName, Collections.emptyList());
     }
 }

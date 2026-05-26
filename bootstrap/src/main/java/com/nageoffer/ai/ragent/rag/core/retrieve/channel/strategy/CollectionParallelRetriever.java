@@ -18,9 +18,11 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel.strategy;
 
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.rag.core.retrieve.QueryEmbedding;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieveRequest;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieverService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.AbstractParallelRetriever;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchTarget;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -31,7 +33,7 @@ import java.util.concurrent.Executor;
  * 继承模板类，实现 Collection 特定的检索逻辑
  */
 @Slf4j
-public class CollectionParallelRetriever extends AbstractParallelRetriever<String> {
+public class CollectionParallelRetriever extends AbstractParallelRetriever<SearchTarget> {
 
     private final RetrieverService retrieverService;
 
@@ -41,7 +43,8 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
     }
 
     @Override
-    protected List<RetrievedChunk> createRetrievalTask(String question, String collectionName, int topK) {
+    protected List<RetrievedChunk> createRetrievalTask(String question, SearchTarget target, int topK) {
+        String collectionName = target.getCollectionName();
         try {
             return retrieverService.retrieve(
                     RetrieveRequest.builder()
@@ -57,8 +60,39 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
     }
 
     @Override
-    protected String getTargetIdentifier(String collectionName) {
-        return "Collection: " + collectionName;
+    protected List<RetrievedChunk> createRetrievalTask(String question,
+                                                       SearchTarget target,
+                                                       int topK,
+                                                       QueryEmbedding queryEmbedding) {
+        String collectionName = target.getCollectionName();
+        try {
+            return retrieverService.retrieveByVector(
+                    queryEmbedding.getVector(),
+                    RetrieveRequest.builder()
+                            .collectionName(collectionName)
+                            .query(question)
+                            .topK(topK)
+                            .build()
+            );
+        } catch (Exception e) {
+            log.error("在 collection {} 中检索失败，错误: {}", collectionName, e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    @Override
+    protected String getEmbeddingModelId(SearchTarget target) {
+        return target.getEmbeddingModelId();
+    }
+
+    @Override
+    protected String getTargetQuery(String question, SearchTarget target) {
+        return target.getQuery() == null ? question : target.getQuery();
+    }
+
+    @Override
+    protected String getTargetIdentifier(SearchTarget target) {
+        return "Collection: " + target.getCollectionName();
     }
 
     @Override

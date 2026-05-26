@@ -17,6 +17,8 @@
 
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel;
 
+import java.util.List;
+
 /**
  * 检索通道接口
  * <p>
@@ -47,6 +49,19 @@ public interface SearchChannel {
      * @return true 表示启用，false 表示跳过
      */
     boolean isEnabled(SearchContext context);
+
+    /**
+     * 解析本通道将要访问的向量检索目标。
+     * <p>
+     * 默认空实现用于兼容非向量通道；向量通道实现后，MultiChannelRetrievalEngine
+     * 会据此提前按 query + embeddingModelId 预生成 Query Embedding。
+     *
+     * @param context 检索上下文
+     * @return 检索目标列表
+     */
+    default List<SearchTarget> resolveSearchTargets(SearchContext context) {
+        return List.of();
+    }
 
     /**
      * 执行检索

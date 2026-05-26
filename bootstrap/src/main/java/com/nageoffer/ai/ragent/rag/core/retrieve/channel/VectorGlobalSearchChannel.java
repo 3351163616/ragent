@@ -18,7 +18,7 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve.channel;
 
 import cn.hutool.core.collection.CollUtil;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
@@ -30,9 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Executor;
 
 /**
@@ -101,6 +99,11 @@ public class VectorGlobalSearchChannel implements SearchChannel {
     }
 
     @Override
+    public List<SearchTarget> resolveSearchTargets(SearchContext context) {
+        return getAllKBTargets(context.getMainQuestion());
+    }
+
+    @Override
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();
 
@@ -108,9 +111,12 @@ public class VectorGlobalSearchChannel implements SearchChannel {
             log.info("执行向量全局检索，问题：{}", context.getMainQuestion());
 
             // 获取所有 KB 类型的 collection
-            List<String> collections = getAllKBCollections();
+            List<SearchTarget> targets = context.getSearchTargets(getName());
+            if (CollUtil.isEmpty(targets)) {
+                targets = resolveSearchTargets(context);
+            }
 
-            if (collections.isEmpty()) {
+            if (targets.isEmpty()) {
                 log.warn("未找到任何 KB collection，跳过全局检索");
                 return SearchChannelResult.builder()
                         .channelType(SearchChannelType.VECTOR_GLOBAL)
@@ -123,8 +129,8 @@ public class VectorGlobalSearchChannel implements SearchChannel {
             // 并行在所有 collection 中检索
             int topKMultiplier = properties.getChannels().getVectorGlobal().getTopKMultiplier();
             List<RetrievedChunk> allChunks = retrieveFromAllCollections(
-                    context.getMainQuestion(),
-                    collections,
+                    context,
+                    targets,
                     context.getTopK() * topKMultiplier
             );
             List<RetrievedChunk> filteredChunks = filterByMinScore(allChunks);
@@ -155,33 +161,40 @@ public class VectorGlobalSearchChannel implements SearchChannel {
     /**
      * 获取所有 KB 类型的 collection
      */
-    private List<String> getAllKBCollections() {
-        Set<String> collections = new HashSet<>();
-
+    private List<SearchTarget> getAllKBTargets(String question) {
         // 从知识库表获取全量 collection（全局检索兜底）
         List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
-                Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                        .select(KnowledgeBaseDO::getCollectionName)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
+                new QueryWrapper<KnowledgeBaseDO>()
+                        .select("id", "name", "collection_name", "embedding_model")
+                        .eq("deleted", 0)
         );
-        for (KnowledgeBaseDO kb : kbList) {
-            String collectionName = kb.getCollectionName();
-            if (collectionName != null && !collectionName.isBlank()) {
-                collections.add(collectionName);
-            }
-        }
-
-        return new ArrayList<>(collections);
+        return kbList.stream()
+                .filter(kb -> kb.getCollectionName() != null && !kb.getCollectionName().isBlank())
+                .collect(java.util.stream.Collectors.toMap(
+                        KnowledgeBaseDO::getCollectionName,
+                        kb -> SearchTarget.builder()
+                                .channelName(getName())
+                                .targetId(kb.getId())
+                                .targetName(kb.getName())
+                                .collectionName(kb.getCollectionName())
+                                .embeddingModelId(kb.getEmbeddingModel())
+                                .query(question)
+                                .build(),
+                        (left, right) -> left
+                ))
+                .values()
+                .stream()
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
     /**
      * 并行在所有 collection 中检索
      */
-    private List<RetrievedChunk> retrieveFromAllCollections(String question,
-                                                            List<String> collections,
+    private List<RetrievedChunk> retrieveFromAllCollections(SearchContext context,
+                                                            List<SearchTarget> targets,
                                                             int topK) {
         // 使用模板方法执行并行检索
-        return parallelRetriever.executeParallelRetrieval(question, collections, topK);
+        return parallelRetriever.executeParallelRetrieval(context, targets, topK);
     }
 
     private List<RetrievedChunk> filterByMinScore(List<RetrievedChunk> chunks) {

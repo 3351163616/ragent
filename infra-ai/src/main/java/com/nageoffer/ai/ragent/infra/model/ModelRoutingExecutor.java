@@ -43,6 +43,14 @@ public class ModelRoutingExecutor {
             List<ModelTarget> targets,
             Function<ModelTarget, C> clientResolver,
             ModelCaller<C, T> caller) {
+        return executeWithFallbackResult(capability, targets, clientResolver, caller).response();
+    }
+
+    public <C, T> ModelRouteResult<T> executeWithFallbackResult(
+            ModelCapability capability,
+            List<ModelTarget> targets,
+            Function<ModelTarget, C> clientResolver,
+            ModelCaller<C, T> caller) {
         String label = capability.getDisplayName();
         if (targets == null || targets.isEmpty()) {
             throw new RemoteException("No " + label + " model candidates available");
@@ -68,7 +76,7 @@ public class ModelRoutingExecutor {
                         target.candidate().getProvider(),
                         target.candidate().getModel(),
                         target.candidate().getPriority());
-                return response;
+                return new ModelRouteResult<>(response, target);
             } catch (Exception e) {
                 last = e;
                 healthStore.markFailure(target.id());

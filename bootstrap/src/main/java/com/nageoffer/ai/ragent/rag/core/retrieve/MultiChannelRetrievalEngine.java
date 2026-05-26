@@ -18,17 +18,22 @@
 package com.nageoffer.ai.ragent.rag.core.retrieve;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
+import com.nageoffer.ai.ragent.framework.trace.RagTraceContext;
 import com.nageoffer.ai.ragent.framework.trace.RagTraceNode;
+import com.nageoffer.ai.ragent.infra.embedding.EmbeddingService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchChannel;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchChannelResult;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchContext;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchTarget;
 import com.nageoffer.ai.ragent.rag.core.retrieve.postprocessor.SearchResultPostProcessor;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -73,6 +78,9 @@ public class MultiChannelRetrievalEngine {
 
     /** 所有后置处理器实现（通过 Spring IoC 自动注入） */
     private final List<SearchResultPostProcessor> postProcessors;
+
+    /** Query Embedding 服务 */
+    private final EmbeddingService embeddingService;
 
     /** 多通道并行检索线程池 */
     private final Executor ragRetrievalExecutor;
@@ -132,6 +140,8 @@ public class MultiChannelRetrievalEngine {
         log.info("启用的检索通道：{}",
                 enabledChannels.stream().map(SearchChannel::getName).toList());
 
+        prepareQueryEmbeddings(context, enabledChannels);
+
         // 使用线程池并行执行所有通道，每个通道独立捕获异常以实现容错
         List<CompletableFuture<SearchChannelResult>> futures = enabledChannels.stream()
                 .map(channel -> CompletableFuture.supplyAsync(
@@ -182,8 +192,41 @@ public class MultiChannelRetrievalEngine {
 
         log.info("多通道检索统计 - 总通道数: {}, 有结果: {}, 无结果: {}, Chunk 总数: {}",
                 enabledChannels.size(), successCount, failureCount, totalChunks);
+        log.info("Query Embedding 复用统计 - 本轮生成次数: {}, 缓存组数: {}, 详情: {}",
+                context.getQueryEmbeddingContext() == null ? 0 : context.getQueryEmbeddingContext().generatedCount(),
+                context.getQueryEmbeddingContext() == null ? 0 : context.getQueryEmbeddingContext().cachedGroupCount(),
+                context.getQueryEmbeddingContext() == null ? "" : context.getQueryEmbeddingContext().describeEmbeddingGroups());
 
         return results;
+    }
+
+    private void prepareQueryEmbeddings(SearchContext context, List<SearchChannel> enabledChannels) {
+        List<SearchTarget> allTargets = new ArrayList<>();
+        for (SearchChannel channel : enabledChannels) {
+            try {
+                List<SearchTarget> channelTargets = channel.resolveSearchTargets(context);
+                context.putSearchTargets(channel.getName(), channelTargets);
+                if (CollUtil.isNotEmpty(channelTargets)) {
+                    allTargets.addAll(channelTargets);
+                    log.info("通道 {} 解析检索目标完成，targetCount={}, targets={}",
+                            channel.getName(),
+                            channelTargets.size(),
+                            channelTargets.stream().map(SearchTarget::displayName).toList());
+                } else {
+                    log.info("通道 {} 未解析到向量检索目标", channel.getName());
+                }
+            } catch (Exception e) {
+                context.putSearchTargets(channel.getName(), List.of());
+                log.warn("通道 {} 解析检索目标失败，将在通道执行阶段按旧逻辑兜底，原因: {}",
+                        channel.getName(), e.getMessage(), e);
+            }
+        }
+
+        if (context.getQueryEmbeddingContext() == null) {
+            log.warn("SearchContext 缺少 QueryEmbeddingContext，跳过 Query Embedding 预生成");
+            return;
+        }
+        context.getQueryEmbeddingContext().preload(allTargets);
     }
 
     /**
@@ -271,12 +314,20 @@ public class MultiChannelRetrievalEngine {
      */
     private SearchContext buildSearchContext(List<SubQuestionIntent> subIntents, int topK) {
         String question = CollUtil.isEmpty(subIntents) ? "" : subIntents.get(0).subQuestion();
+        List<SubQuestionIntent> intents = CollUtil.isEmpty(subIntents) ? List.of() : subIntents;
 
         return SearchContext.builder()
                 .originalQuestion(question)
                 .rewrittenQuestion(question)
-                .intents(subIntents)
+                .intents(intents)
                 .topK(topK)
+                .queryEmbeddingContext(QueryEmbeddingContext.create(
+                        question,
+                        question,
+                        IdUtil.fastSimpleUUID(),
+                        RagTraceContext.getTraceId(),
+                        embeddingService
+                ))
                 .build();
     }
 }
