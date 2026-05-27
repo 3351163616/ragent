@@ -3,6 +3,7 @@ import type { User } from "@/types";
 const TOKEN_KEY = "ragent_token";
 const USER_KEY = "ragent_user";
 const THEME_KEY = "ragent_theme";
+const EDITION_KEY = "ragent_edition";
 
 function safeGet(key: string) {
   try {
@@ -62,5 +63,11 @@ export const storage = {
   },
   setTheme(theme: string) {
     safeSet(THEME_KEY, theme);
+  },
+  getEdition(): string | null {
+    return safeGet(EDITION_KEY);
+  },
+  setEdition(edition: string) {
+    safeSet(EDITION_KEY, edition);
   }
 };

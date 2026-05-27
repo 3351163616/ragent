@@ -1,0 +1,2283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ragent — Anthropic Edition · 思考型检索对话</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============================================
+         DESIGN TOKENS — Anthropic Claude system
+         ============================================ */
+      :root {
+        /* Colors — Brand */
+        --primary: #cc785c;
+        --primary-active: #a9583e;
+        --primary-disabled: #e6dfd8;
+        --accent-teal: #5db8a6;
+        --accent-amber: #e8a55a;
+
+        /* Colors — Surface */
+        --canvas: #faf9f5;
+        --surface-soft: #f5f0e8;
+        --surface-card: #efe9de;
+        --surface-cream-strong: #e8e0d2;
+        --surface-dark: #181715;
+        --surface-dark-elevated: #252320;
+        --surface-dark-soft: #1f1e1b;
+
+        /* Colors — Text */
+        --ink: #141413;
+        --body-strong: #252523;
+        --body: #3d3d3a;
+        --muted: #6c6a64;
+        --muted-soft: #8e8b82;
+        --on-primary: #ffffff;
+        --on-dark: #faf9f5;
+        --on-dark-soft: #a09d96;
+
+        /* Colors — Borders */
+        --hairline: #e6dfd8;
+        --hairline-soft: #ebe6df;
+        --hairline-dark: #2d2b27;
+
+        /* Colors — Semantic */
+        --success: #5db872;
+        --warning: #d4a017;
+        --error: #c64545;
+
+        /* Typography — display (serif) */
+        --font-display: "EB Garamond", "Tiempos Headline", "Cormorant Garamond",
+          "Times New Roman", serif;
+        --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+        /* Spacing */
+        --space-xxs: 4px;
+        --space-xs: 8px;
+        --space-sm: 12px;
+        --space-md: 16px;
+        --space-lg: 24px;
+        --space-xl: 32px;
+        --space-xxl: 48px;
+        --space-section: 96px;
+
+        /* Radius */
+        --r-xs: 4px;
+        --r-sm: 6px;
+        --r-md: 8px;
+        --r-lg: 12px;
+        --r-xl: 16px;
+        --r-pill: 9999px;
+      }
+
+      /* ============================================
+         RESET & BASE
+         ============================================ */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--canvas);
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 16px;
+        line-height: 1.55;
+        font-feature-settings: "ss01" on, "cv11" on;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      ::selection {
+        background-color: var(--primary);
+        color: var(--on-primary);
+      }
+
+      button {
+        font-family: inherit;
+        cursor: pointer;
+        border: 0;
+        background: none;
+      }
+
+      a {
+        color: var(--primary);
+        text-decoration: none;
+        transition: opacity 0.18s ease;
+      }
+      a:hover {
+        opacity: 0.75;
+      }
+
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--hairline);
+        border-radius: var(--r-pill);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--muted-soft);
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      /* ============================================
+         APP SHELL
+         ============================================ */
+      .app {
+        display: grid;
+        grid-template-columns: 264px 1fr 344px;
+        grid-template-rows: 64px 1fr;
+        height: 100vh;
+        background: var(--canvas);
+      }
+
+      /* ============================================
+         TOP NAV — cream, 64px
+         ============================================ */
+      .topnav {
+        grid-column: 1 / -1;
+        height: 64px;
+        background: var(--canvas);
+        border-bottom: 1px solid var(--hairline-soft);
+        display: flex;
+        align-items: center;
+        padding: 0 var(--space-xl);
+        gap: var(--space-xl);
+        position: relative;
+        z-index: 30;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 500;
+        letter-spacing: -0.4px;
+        color: var(--ink);
+      }
+
+      .spike {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+      }
+
+      .nav-menu {
+        display: flex;
+        gap: 4px;
+        margin-left: var(--space-md);
+      }
+
+      .nav-link {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--body);
+        padding: 8px 14px;
+        border-radius: var(--r-md);
+        transition: background 0.18s ease, color 0.18s ease;
+      }
+      .nav-link:hover {
+        background: var(--surface-card);
+        color: var(--ink);
+        opacity: 1;
+      }
+      .nav-link.active {
+        background: var(--surface-card);
+        color: var(--ink);
+      }
+
+      .nav-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+      }
+
+      .topnav-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .topnav-meta .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 0 3px rgba(93, 184, 114, 0.18);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 18px;
+        border-radius: var(--r-md);
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1;
+        transition: background 0.18s ease, transform 0.06s ease,
+          border-color 0.18s ease;
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn-primary {
+        background: var(--primary);
+        color: var(--on-primary);
+      }
+      .btn-primary:hover {
+        background: var(--primary-active);
+      }
+      .btn-secondary {
+        background: var(--canvas);
+        color: var(--ink);
+        border: 1px solid var(--hairline);
+      }
+      .btn-secondary:hover {
+        background: var(--surface-card);
+      }
+      .btn-text {
+        color: var(--ink);
+        padding: 0 10px;
+        background: transparent;
+        height: 40px;
+      }
+      .btn-text:hover {
+        color: var(--primary);
+      }
+      .btn-icon {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        justify-content: center;
+        background: var(--canvas);
+        border: 1px solid var(--hairline);
+        color: var(--ink);
+        border-radius: var(--r-pill);
+      }
+      .btn-icon:hover {
+        background: var(--surface-card);
+      }
+      .btn-on-dark {
+        background: var(--surface-dark-elevated);
+        color: var(--on-dark);
+      }
+      .btn-on-dark:hover {
+        background: #353230;
+      }
+      .btn-cream-on-coral {
+        background: var(--canvas);
+        color: var(--ink);
+      }
+      .btn-cream-on-coral:hover {
+        background: var(--surface-card);
+      }
+
+      /* ============================================
+         LEFT SIDEBAR — sessions + knowledge bases
+         ============================================ */
+      .sidebar {
+        grid-column: 1;
+        grid-row: 2;
+        background: var(--canvas);
+        border-right: 1px solid var(--hairline-soft);
+        padding: var(--space-lg) var(--space-md);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-lg);
+      }
+
+      .new-chat {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 12px 14px;
+        background: var(--surface-card);
+        color: var(--ink);
+        border-radius: var(--r-md);
+        font-size: 14px;
+        font-weight: 500;
+        transition: background 0.18s ease;
+      }
+      .new-chat:hover {
+        background: var(--surface-cream-strong);
+      }
+      .new-chat .kbd {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+        background: var(--canvas);
+        padding: 2px 6px;
+        border-radius: var(--r-xs);
+        border: 1px solid var(--hairline);
+      }
+
+      .side-section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .side-label {
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--muted-soft);
+        padding: 0 10px;
+        margin-bottom: 6px;
+      }
+
+      .session-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 10px 12px;
+        border-radius: var(--r-md);
+        cursor: pointer;
+        transition: background 0.16s ease;
+      }
+      .session-item:hover {
+        background: var(--surface-soft);
+      }
+      .session-item.active {
+        background: var(--surface-card);
+      }
+      .session-item .title {
+        font-size: 13.5px;
+        color: var(--ink);
+        font-weight: 500;
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .session-item .preview {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .kb-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .kb-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: var(--r-md);
+        cursor: pointer;
+        font-size: 13.5px;
+        color: var(--body);
+        transition: background 0.16s ease;
+      }
+      .kb-item:hover {
+        background: var(--surface-soft);
+        color: var(--ink);
+      }
+      .kb-item.active {
+        background: var(--surface-card);
+        color: var(--ink);
+      }
+      .kb-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: 0 0 8px;
+      }
+      .kb-dot.teal {
+        background: var(--accent-teal);
+      }
+      .kb-dot.coral {
+        background: var(--primary);
+      }
+      .kb-dot.amber {
+        background: var(--accent-amber);
+      }
+      .kb-count {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted-soft);
+      }
+
+      .user-card {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: var(--r-md);
+        border: 1px solid var(--hairline);
+        background: var(--canvas);
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: var(--r-pill);
+        background: linear-gradient(135deg, #cc785c 0%, #a9583e 100%);
+        color: var(--on-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        flex: 0 0 32px;
+      }
+      .user-info {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.2;
+        min-width: 0;
+      }
+      .user-info .name {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      .user-info .role {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      /* ============================================
+         MAIN CONVERSATION COLUMN
+         ============================================ */
+      .main {
+        grid-column: 2;
+        grid-row: 2;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--canvas);
+      }
+
+      .main-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: var(--space-xxl) 64px 240px 64px;
+      }
+
+      .thread {
+        max-width: 760px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 64px;
+      }
+
+      /* — Thread header (hero band) — */
+      .thread-hero {
+        border-bottom: 1px solid var(--hairline-soft);
+        padding-bottom: var(--space-xl);
+        animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin-bottom: var(--space-md);
+      }
+      .crumbs .sep {
+        opacity: 0.5;
+      }
+      .crumbs a {
+        color: var(--muted);
+      }
+      .thread-hero h1 {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-size: 46px;
+        line-height: 1.08;
+        letter-spacing: -1px;
+        margin: 0;
+        color: var(--ink);
+      }
+      .thread-hero .lead {
+        margin-top: var(--space-md);
+        font-size: 17px;
+        line-height: 1.6;
+        color: var(--body);
+        max-width: 640px;
+      }
+
+      .thread-meta {
+        margin-top: var(--space-lg);
+        display: flex;
+        gap: var(--space-md);
+        flex-wrap: wrap;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: var(--r-pill);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.4;
+        white-space: nowrap;
+      }
+      .badge-pill {
+        background: var(--surface-card);
+        color: var(--ink);
+      }
+      .badge-coral {
+        background: var(--primary);
+        color: var(--on-primary);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-size: 11px;
+      }
+      .badge-outline {
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid var(--hairline);
+      }
+      .badge-on-dark {
+        background: rgba(250, 249, 245, 0.08);
+        color: var(--on-dark);
+      }
+
+      /* — User message — */
+      .msg-user {
+        display: flex;
+        justify-content: flex-end;
+        animation: rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+        animation-delay: 0.05s;
+      }
+      .user-bubble {
+        max-width: 560px;
+        background: var(--surface-card);
+        color: var(--ink);
+        padding: 16px 20px;
+        border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
+        font-size: 15.5px;
+        line-height: 1.55;
+        position: relative;
+      }
+      .user-bubble .tag {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 6px;
+        letter-spacing: 0.4px;
+      }
+
+      /* — Assistant message — */
+      .msg-assistant {
+        display: flex;
+        gap: var(--space-md);
+        animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+        animation-delay: 0.15s;
+      }
+      .avatar-claude {
+        width: 32px;
+        height: 32px;
+        border-radius: var(--r-pill);
+        background: var(--canvas);
+        border: 1px solid var(--hairline);
+        flex: 0 0 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 4px;
+      }
+      .assistant-body {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-lg);
+      }
+
+      .assistant-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+      }
+      .assistant-meta .ring {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+        box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.18);
+      }
+
+      /* — Pipeline strip (思考过程横向 stepper) — */
+      .pipeline-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--hairline);
+        border: 1px solid var(--hairline);
+        border-radius: var(--r-lg);
+        overflow: hidden;
+      }
+      .pipeline-step {
+        background: var(--canvas);
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .pipeline-step .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1.4px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .pipeline-step .num {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted-soft);
+      }
+      .pipeline-step .name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      .pipeline-step .ms {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .pipeline-step.active {
+        background: var(--surface-card);
+      }
+      .pipeline-step.active .name {
+        color: var(--primary);
+      }
+
+      /* — Sub-questions chips (改写后的子问题) — */
+      .subq-block {
+        border-left: 2px solid var(--primary);
+        padding: 4px var(--space-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+      }
+      .subq-label {
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--primary);
+      }
+      .subq-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .subq {
+        font-size: 14px;
+        color: var(--body-strong);
+      }
+      .subq .marker {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--primary);
+        margin-right: 8px;
+      }
+
+      /* — Answer prose with serif H2 — */
+      .answer-prose h2 {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-size: 36px;
+        line-height: 1.12;
+        letter-spacing: -0.5px;
+        margin: var(--space-xl) 0 var(--space-md);
+        color: var(--ink);
+      }
+      .answer-prose h3 {
+        font-family: var(--font-display);
+        font-weight: 500;
+        font-size: 22px;
+        line-height: 1.25;
+        letter-spacing: -0.2px;
+        margin: var(--space-lg) 0 var(--space-xs);
+        color: var(--ink);
+      }
+      .answer-prose p {
+        font-size: 16px;
+        line-height: 1.7;
+        color: var(--body-strong);
+        margin: 0 0 var(--space-md);
+      }
+      .answer-prose p .cite {
+        display: inline-block;
+        background: var(--surface-card);
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        padding: 1px 6px;
+        border-radius: var(--r-xs);
+        margin-left: 3px;
+        vertical-align: 2px;
+        transition: background 0.15s ease;
+        cursor: pointer;
+      }
+      .answer-prose p .cite:hover {
+        background: var(--primary);
+        color: var(--on-primary);
+      }
+      .answer-prose ul {
+        padding-left: var(--space-md);
+        margin: 0 0 var(--space-md);
+      }
+      .answer-prose li {
+        font-size: 16px;
+        line-height: 1.7;
+        color: var(--body-strong);
+        margin-bottom: 6px;
+      }
+      .answer-prose li::marker {
+        color: var(--primary);
+      }
+      .answer-prose strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .answer-prose .pullquote {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-style: italic;
+        font-size: 22px;
+        line-height: 1.4;
+        color: var(--ink);
+        padding: var(--space-md) 0 var(--space-md) var(--space-lg);
+        border-left: 3px solid var(--primary);
+        margin: var(--space-lg) 0;
+      }
+
+      .stream-cursor {
+        display: inline-block;
+        width: 8px;
+        height: 18px;
+        background: var(--primary);
+        vertical-align: -3px;
+        margin-left: 2px;
+        animation: blink 1.05s steps(2, end) infinite;
+      }
+
+      /* — Sources grid (dark mockup cards) — */
+      .sources-block {
+        margin-top: var(--space-xs);
+      }
+      .sources-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: var(--space-md);
+      }
+      .sources-head h4 {
+        font-family: var(--font-display);
+        font-weight: 500;
+        font-size: 20px;
+        margin: 0;
+        letter-spacing: -0.2px;
+      }
+      .sources-head .meta {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .sources-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--space-md);
+      }
+      .source-card {
+        background: var(--surface-dark);
+        color: var(--on-dark);
+        border-radius: var(--r-lg);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.22s ease, box-shadow 0.22s ease;
+      }
+      .source-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 40px -22px rgba(20, 20, 19, 0.55);
+      }
+      .source-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          120% 80% at 100% 0%,
+          rgba(204, 120, 92, 0.08) 0%,
+          transparent 60%
+        );
+        pointer-events: none;
+      }
+      .source-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--on-dark-soft);
+        font-family: var(--font-mono);
+        letter-spacing: 0.4px;
+      }
+      .source-meta .ch {
+        color: var(--accent-teal);
+      }
+      .source-title {
+        font-size: 15px;
+        font-weight: 500;
+        line-height: 1.35;
+        color: var(--on-dark);
+      }
+      .source-snippet {
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--on-dark-soft);
+        font-family: var(--font-body);
+        position: relative;
+        padding-left: 12px;
+        border-left: 2px solid var(--surface-dark-elevated);
+      }
+      .source-snippet b {
+        background: rgba(232, 165, 90, 0.22);
+        color: #f3d6a9;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: 500;
+      }
+      .source-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 10px;
+        border-top: 1px solid var(--hairline-dark);
+      }
+      .score-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--on-dark-soft);
+      }
+      .score-bar .track {
+        width: 80px;
+        height: 4px;
+        background: var(--surface-dark-elevated);
+        border-radius: var(--r-pill);
+        overflow: hidden;
+      }
+      .score-bar .fill {
+        height: 100%;
+        background: var(--accent-teal);
+        border-radius: var(--r-pill);
+      }
+      .source-open {
+        font-size: 11px;
+        color: var(--on-dark-soft);
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+      }
+      .source-open:hover {
+        color: var(--primary);
+        opacity: 1;
+      }
+
+      /* — MCP tool call card (dark, code-window flavor) — */
+      .mcp-card {
+        background: var(--surface-dark);
+        color: var(--on-dark);
+        border-radius: var(--r-lg);
+        overflow: hidden;
+        position: relative;
+        transition: box-shadow 0.22s ease;
+      }
+      .mcp-card:hover {
+        box-shadow: 0 18px 40px -22px rgba(20, 20, 19, 0.55);
+      }
+      .mcp-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--hairline-dark);
+        background: var(--surface-dark-soft);
+      }
+      .mcp-head .dots {
+        display: flex;
+        gap: 6px;
+      }
+      .mcp-head .dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .mcp-head .dots span:nth-child(1) {
+        background: #ff5f57;
+      }
+      .mcp-head .dots span:nth-child(2) {
+        background: #febc2e;
+      }
+      .mcp-head .dots span:nth-child(3) {
+        background: #28c840;
+      }
+      .mcp-head .title {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--on-dark-soft);
+        margin-left: 4px;
+      }
+      .mcp-head .badge-on-dark {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+      }
+      .mcp-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .mcp-section-label {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--on-dark-soft);
+        text-transform: uppercase;
+        letter-spacing: 1.6px;
+      }
+      .codeblock {
+        background: var(--surface-dark-soft);
+        border-radius: var(--r-md);
+        padding: 14px 16px;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--on-dark);
+        overflow-x: auto;
+      }
+      .codeblock .tok-key {
+        color: #d6cfa1;
+      }
+      .codeblock .tok-str {
+        color: #b5d4b8;
+      }
+      .codeblock .tok-num {
+        color: #e8a55a;
+      }
+      .codeblock .tok-comment {
+        color: var(--on-dark-soft);
+        font-style: italic;
+      }
+      .codeblock .tok-bool {
+        color: #cc785c;
+      }
+      .mcp-result {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 16px;
+        font-size: 13px;
+        font-family: var(--font-body);
+        color: var(--on-dark);
+      }
+      .mcp-result dt {
+        color: var(--on-dark-soft);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .mcp-result dd {
+        margin: 0;
+        line-height: 1.5;
+      }
+      .mcp-result dd code {
+        font-family: var(--font-mono);
+        background: var(--surface-dark-elevated);
+        padding: 2px 6px;
+        border-radius: var(--r-xs);
+        font-size: 12px;
+      }
+
+      /* — Toolbar under answer — */
+      .answer-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: var(--space-xs) 0 0;
+        border-top: 1px solid var(--hairline-soft);
+      }
+      .tool-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        font-size: 12.5px;
+        color: var(--muted);
+        border-radius: var(--r-md);
+        font-weight: 500;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .tool-btn:hover {
+        background: var(--surface-soft);
+        color: var(--ink);
+      }
+      .tool-btn.active {
+        color: var(--primary);
+      }
+      .tool-divider {
+        width: 1px;
+        height: 16px;
+        background: var(--hairline);
+        margin: 0 6px;
+      }
+      .tool-spacer {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--muted-soft);
+      }
+
+      /* — Coral CTA band (in-thread feedback prompt) — */
+      .coral-band {
+        background: var(--primary);
+        color: var(--on-primary);
+        border-radius: var(--r-lg);
+        padding: 40px;
+        display: flex;
+        gap: var(--space-xl);
+        align-items: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .coral-band::before {
+        content: "";
+        position: absolute;
+        right: -80px;
+        top: -80px;
+        width: 320px;
+        height: 320px;
+        border-radius: 50%;
+        background: radial-gradient(
+          closest-side,
+          rgba(255, 255, 255, 0.16),
+          transparent
+        );
+      }
+      .coral-band-text {
+        flex: 1;
+      }
+      .coral-band-text .eyebrow {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        opacity: 0.78;
+        margin-bottom: 8px;
+      }
+      .coral-band-text h3 {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-size: 28px;
+        line-height: 1.2;
+        letter-spacing: -0.3px;
+        margin: 0 0 8px;
+      }
+      .coral-band-text p {
+        margin: 0;
+        opacity: 0.92;
+        font-size: 14.5px;
+        line-height: 1.6;
+        max-width: 420px;
+      }
+      .coral-band-actions {
+        display: flex;
+        gap: 10px;
+        position: relative;
+        z-index: 1;
+      }
+
+      /* — Composer (sticky bottom input) — */
+      .composer {
+        position: absolute;
+        left: 64px;
+        right: 64px;
+        bottom: var(--space-xl);
+        background: var(--canvas);
+        border: 1px solid var(--hairline);
+        border-radius: var(--r-lg);
+        padding: 14px 16px 12px;
+        max-width: 760px;
+        margin: 0 auto;
+        box-shadow: 0 12px 40px -20px rgba(20, 20, 19, 0.18),
+          0 2px 8px -2px rgba(20, 20, 19, 0.06);
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+      .composer:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.16),
+          0 12px 40px -20px rgba(20, 20, 19, 0.18);
+      }
+      .composer-input {
+        font-family: var(--font-body);
+        font-size: 15px;
+        color: var(--ink);
+        background: transparent;
+        border: 0;
+        outline: none;
+        width: 100%;
+        resize: none;
+        line-height: 1.55;
+        min-height: 26px;
+        padding: 4px 0 6px;
+      }
+      .composer-input::placeholder {
+        color: var(--muted-soft);
+      }
+      .composer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 4px;
+      }
+      .composer-row-left {
+        display: flex;
+        gap: 4px;
+      }
+      .composer-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12.5px;
+        border-radius: var(--r-md);
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .composer-chip:hover {
+        background: var(--surface-soft);
+        color: var(--ink);
+      }
+      .composer-chip.is-on {
+        background: var(--surface-card);
+        color: var(--ink);
+      }
+      .composer-send {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--r-md);
+        background: var(--primary);
+        color: var(--on-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.18s ease;
+      }
+      .composer-send:hover {
+        background: var(--primary-active);
+      }
+      .composer-hint {
+        margin: var(--space-xs) auto 0;
+        max-width: 760px;
+        text-align: center;
+        font-size: 11.5px;
+        color: var(--muted-soft);
+        font-family: var(--font-mono);
+        letter-spacing: 0.3px;
+      }
+      .composer-wrap {
+        position: absolute;
+        left: 64px;
+        right: 64px;
+        bottom: var(--space-md);
+        pointer-events: none;
+      }
+      .composer-wrap > * {
+        pointer-events: auto;
+      }
+
+      /* ============================================
+         RIGHT INSPECTOR (思考过程时间线)
+         ============================================ */
+      .inspector {
+        grid-column: 3;
+        grid-row: 2;
+        background: var(--surface-soft);
+        border-left: 1px solid var(--hairline-soft);
+        padding: var(--space-lg);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-lg);
+      }
+
+      .insp-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .insp-head h3 {
+        font-family: var(--font-display);
+        font-weight: 500;
+        font-size: 20px;
+        margin: 0;
+        letter-spacing: -0.2px;
+      }
+      .insp-head .ms {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .insp-tabs {
+        display: flex;
+        gap: 4px;
+        background: var(--canvas);
+        padding: 4px;
+        border-radius: var(--r-md);
+        border: 1px solid var(--hairline-soft);
+      }
+      .insp-tab {
+        flex: 1;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+        padding: 6px 8px;
+        border-radius: var(--r-sm);
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .insp-tab:hover {
+        color: var(--ink);
+      }
+      .insp-tab.active {
+        background: var(--surface-card);
+        color: var(--ink);
+      }
+
+      /* — Timeline — */
+      .timeline {
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        padding-left: 28px;
+      }
+      .timeline::before {
+        content: "";
+        position: absolute;
+        left: 11px;
+        top: 8px;
+        bottom: 8px;
+        width: 1px;
+        background: var(--hairline);
+      }
+      .tl-row {
+        position: relative;
+        padding: 12px 0 16px;
+      }
+      .tl-dot {
+        position: absolute;
+        left: -22px;
+        top: 14px;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--canvas);
+        border: 2px solid var(--primary);
+      }
+      .tl-dot.done {
+        background: var(--primary);
+      }
+      .tl-dot.pending {
+        border-color: var(--hairline);
+      }
+      .tl-row .head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .tl-row .head .name {
+        font-size: 13.5px;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      .tl-row .head .ms {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .tl-row .body-line {
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.45;
+        margin-top: 4px;
+      }
+      .tl-row .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      .tl-chip {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--ink);
+        background: var(--canvas);
+        border: 1px solid var(--hairline);
+        padding: 2px 6px;
+        border-radius: var(--r-xs);
+        letter-spacing: 0.3px;
+      }
+      .tl-chip.coral {
+        background: var(--primary);
+        color: var(--on-primary);
+        border-color: var(--primary);
+      }
+      .tl-chip.teal {
+        background: rgba(93, 184, 166, 0.18);
+        color: #2d8772;
+        border-color: rgba(93, 184, 166, 0.4);
+      }
+
+      /* — Model health card (insp) — */
+      .insp-card {
+        background: var(--canvas);
+        border: 1px solid var(--hairline-soft);
+        border-radius: var(--r-lg);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .insp-card-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+      .insp-card-title .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1.4px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .insp-card-title .more {
+        font-size: 11px;
+        color: var(--primary);
+        font-weight: 500;
+      }
+      .insp-model-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--hairline-soft);
+        font-size: 13px;
+      }
+      .insp-model-row:last-child {
+        border-bottom: 0;
+      }
+      .insp-model-row .name {
+        flex: 1;
+        font-weight: 500;
+        color: var(--ink);
+      }
+      .insp-model-row .latency {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: 0 0 8px;
+      }
+      .status-dot.closed {
+        background: var(--success);
+      }
+      .status-dot.half {
+        background: var(--accent-amber);
+      }
+      .status-dot.open {
+        background: var(--error);
+      }
+      .status-tag {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        padding: 2px 6px;
+        border-radius: var(--r-xs);
+      }
+      .status-tag.closed {
+        color: #2d7a45;
+        background: rgba(93, 184, 114, 0.16);
+      }
+      .status-tag.half {
+        color: #946a08;
+        background: rgba(212, 160, 23, 0.16);
+      }
+      .status-tag.open {
+        color: #8d2929;
+        background: rgba(198, 69, 69, 0.16);
+      }
+
+      /* ============================================
+         ANIMATIONS
+         ============================================ */
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      @keyframes pulse-coral {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(204, 120, 92, 0.35);
+        }
+        50% {
+          box-shadow: 0 0 0 8px rgba(204, 120, 92, 0);
+        }
+      }
+      .stagger > * {
+        animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .stagger > *:nth-child(1) {
+        animation-delay: 0.08s;
+      }
+      .stagger > *:nth-child(2) {
+        animation-delay: 0.16s;
+      }
+      .stagger > *:nth-child(3) {
+        animation-delay: 0.24s;
+      }
+      .stagger > *:nth-child(4) {
+        animation-delay: 0.32s;
+      }
+      .stagger > *:nth-child(5) {
+        animation-delay: 0.4s;
+      }
+      .stagger > *:nth-child(6) {
+        animation-delay: 0.48s;
+      }
+      .stagger > *:nth-child(7) {
+        animation-delay: 0.56s;
+      }
+
+      /* ============================================
+         RESPONSIVE — quick collapse below 1280px
+         ============================================ */
+      @media (max-width: 1280px) {
+        .app {
+          grid-template-columns: 240px 1fr;
+        }
+        .inspector {
+          display: none;
+        }
+      }
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+        }
+        .main-scroll {
+          padding: var(--space-xl) 24px 220px;
+        }
+        .composer,
+        .composer-wrap {
+          left: 16px;
+          right: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- ============================================
+           TOP NAV
+           ============================================ -->
+      <header class="topnav">
+        <div class="brand">
+          <!-- Anthropic spike-mark (4-spoke radial asterisk) -->
+          <svg
+            class="spike"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M12 1 13.4 9.2 21 6.5l-5.5 6.1L22 16.4l-8.1-1.1L13.5 23 12 15.2 10.5 23l-.4-7.7L2 16.4l6.5-3.8L3 6.5l7.6 2.7L12 1Z"
+            />
+          </svg>
+          Ragent
+        </div>
+        <nav class="nav-menu" aria-label="Primary">
+          <a class="nav-link active" href="#">Chat</a>
+          <a class="nav-link" href="#">Knowledge</a>
+          <a class="nav-link" href="#">Connectors</a>
+          <a class="nav-link" href="#">Intent Tree</a>
+          <a class="nav-link" href="#">Trace</a>
+        </nav>
+        <div class="nav-right">
+          <span class="topnav-meta">
+            <span class="dot"></span> claude-sonnet-4-6 · routing healthy
+          </span>
+          <button class="btn btn-text">Sign in</button>
+          <button class="btn btn-primary">Try Ragent</button>
+        </div>
+      </header>
+
+      <!-- ============================================
+           SIDEBAR
+           ============================================ -->
+      <aside class="sidebar">
+        <button class="new-chat">
+          <span style="display: flex; align-items: center; gap: 10px">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New conversation
+          </span>
+          <span class="kbd">⌘ K</span>
+        </button>
+
+        <div class="side-section">
+          <div class="side-label">Today</div>
+          <div class="session-item active">
+            <span class="title">海螺出行报销标准 2026</span>
+            <span class="preview">finance · 7 turns · 4 sources</span>
+          </div>
+          <div class="session-item">
+            <span class="title">ETL pipeline 节点扩展指南</span>
+            <span class="preview">eng-docs · 3 turns</span>
+          </div>
+          <div class="session-item">
+            <span class="title">Q1 OKR 拆解会议纪要</span>
+            <span class="preview">company · 12 turns</span>
+          </div>
+        </div>
+
+        <div class="side-section">
+          <div class="side-label">Yesterday</div>
+          <div class="session-item">
+            <span class="title">PostgreSQL pgvector 索引选型</span>
+            <span class="preview">infra · 8 turns</span>
+          </div>
+          <div class="session-item">
+            <span class="title">Sa-Token 单点登录配置</span>
+            <span class="preview">auth · 2 turns</span>
+          </div>
+        </div>
+
+        <div class="side-section">
+          <div class="side-label">Knowledge Bases</div>
+          <div class="kb-list">
+            <div class="kb-item active">
+              <span class="kb-dot coral"></span>
+              rag-core
+              <span class="kb-count">1,284</span>
+            </div>
+            <div class="kb-item">
+              <span class="kb-dot teal"></span>
+              kb-finance
+              <span class="kb-count">412</span>
+            </div>
+            <div class="kb-item">
+              <span class="kb-dot amber"></span>
+              kb-engineering
+              <span class="kb-count">3,902</span>
+            </div>
+            <div class="kb-item">
+              <span class="kb-dot teal"></span>
+              kb-products
+              <span class="kb-count">218</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="user-card">
+          <div class="avatar">M</div>
+          <div class="user-info">
+            <span class="name">马成</span>
+            <span class="role">Platform Engineer · 海螺</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ============================================
+           MAIN COLUMN
+           ============================================ -->
+      <main class="main">
+        <div class="main-scroll">
+          <div class="thread stagger">
+            <!-- Thread hero -->
+            <section class="thread-hero">
+              <div class="crumbs">
+                <a href="#">Conversations</a>
+                <span class="sep">/</span>
+                <span>海螺出行 · 报销标准</span>
+                <span class="sep">/</span>
+                <span style="color: var(--ink)">Thread 0xae1c</span>
+              </div>
+              <h1>
+                关于差旅与请客户吃饭的报销标准，<br />
+                Claude 会从制度文档里替你查清楚。
+              </h1>
+              <p class="lead">
+                询问任何与公司制度、工程文档或客户合同相关的问题。Ragent
+                会先重写你的问题、识别意图，再在多个知识库与
+                MCP 工具之间检索证据，最终给出带引用的回答。
+              </p>
+              <div class="thread-meta">
+                <span class="badge badge-pill">★ kb-finance · 优先匹配</span>
+                <span class="badge badge-pill">deep-thinking · on</span>
+                <span class="badge badge-outline">memory: 4 turns</span>
+                <span class="badge badge-coral">routing healthy</span>
+              </div>
+            </section>
+
+            <!-- ============= USER MESSAGE ============= -->
+            <div class="msg-user">
+              <div class="user-bubble">
+                <div class="tag">user · 14:08</div>
+                出差去上海拜访客户，能不能在公司报销请他们吃晚饭的费用？标准是多少？另外高铁二等座可以吗？
+              </div>
+            </div>
+
+            <!-- ============= ASSISTANT MESSAGE ============= -->
+            <div class="msg-assistant">
+              <div class="avatar-claude">
+                <svg
+                  class="spike"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 1 13.4 9.2 21 6.5l-5.5 6.1L22 16.4l-8.1-1.1L13.5 23 12 15.2 10.5 23l-.4-7.7L2 16.4l6.5-3.8L3 6.5l7.6 2.7L12 1Z"
+                  />
+                </svg>
+              </div>
+              <div class="assistant-body">
+                <div class="assistant-meta">
+                  <span class="ring"></span>
+                  Ragent · sonnet-4-6 · pipeline 完成 · 1.34s
+                </div>
+
+                <!-- Pipeline strip -->
+                <div class="pipeline-strip">
+                  <div class="pipeline-step">
+                    <div class="top">
+                      <span class="num">01</span>
+                      Rewrite
+                    </div>
+                    <div class="name">3 个子问题</div>
+                    <div class="ms">142 ms</div>
+                  </div>
+                  <div class="pipeline-step">
+                    <div class="top">
+                      <span class="num">02</span>
+                      Intent
+                    </div>
+                    <div class="name">2 类意图</div>
+                    <div class="ms">208 ms</div>
+                  </div>
+                  <div class="pipeline-step active">
+                    <div class="top">
+                      <span class="num">03</span>
+                      Retrieve
+                    </div>
+                    <div class="name">6 条证据</div>
+                    <div class="ms">381 ms</div>
+                  </div>
+                  <div class="pipeline-step">
+                    <div class="top">
+                      <span class="num">04</span>
+                      Generate
+                    </div>
+                    <div class="name">流式生成</div>
+                    <div class="ms">609 ms</div>
+                  </div>
+                </div>
+
+                <!-- Sub-questions -->
+                <div class="subq-block">
+                  <span class="subq-label">Query rewrite</span>
+                  <div class="subq-list">
+                    <div class="subq">
+                      <span class="marker">Q₁</span>客户招待餐费的<strong
+                        >报销额度</strong
+                      >是多少？
+                    </div>
+                    <div class="subq">
+                      <span class="marker">Q₂</span>客户招待餐费在<strong
+                        >上海</strong
+                      >的特殊规定？
+                    </div>
+                    <div class="subq">
+                      <span class="marker">Q₃</span>员工因公出差<strong
+                        >高铁</strong
+                      >乘坐标准？
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Answer prose -->
+                <article class="answer-prose">
+                  <h2>可以报销。两件事，分开看。</h2>
+                  <p>
+                    根据《海螺出行差旅与招待管理办法 v2026.1》的现行版本，<strong
+                      >客户招待餐费属于业务招待费</strong
+                    >，需走部门负责人 +
+                    财务的双签流程；高铁二等座则是员工普通出差的默认舱位标准，无需特殊审批<span
+                      class="cite"
+                      >[1]</span
+                    ><span class="cite">[2]</span>。
+                  </p>
+
+                  <h3>1 · 客户招待餐费</h3>
+                  <ul>
+                    <li>
+                      上海（一线城市）单人单餐上限
+                      <strong>500 元</strong>，普通城市
+                      <strong>300 元</strong>，整桌人数计入双方<span class="cite"
+                        >[1]</span
+                      >。
+                    </li>
+                    <li>
+                      需在事前 24 小时内提报《招待登记表》，否则触发<strong
+                        >事后说明</strong
+                      >流程<span class="cite">[3]</span>。
+                    </li>
+                    <li>酒水类目仅在客户已明确确认的前提下报销，且不超过总额 30%。</li>
+                  </ul>
+
+                  <blockquote class="pullquote">
+                    "招待费的关键不是金额，而是流程闭环 — 事前登记、事中陪同、事后报销。"
+                  </blockquote>
+
+                  <h3>2 · 高铁出行标准</h3>
+                  <ul>
+                    <li>
+                      <strong>P5 及以下</strong>员工默认乘坐<strong
+                        >二等座</strong
+                      >，单程超过 4 小时可申请一等座<span class="cite">[2]</span>。
+                    </li>
+                    <li>
+                      <strong>P6 及以上</strong>可直接预订一等座，需在差旅平台「OurFly」勾选「领导通道」。
+                    </li>
+                    <li>
+                      跨城地铁与机场往返车费实报实销，发票需含税号。
+                    </li>
+                  </ul>
+
+                  <p>
+                    本次结论是对你的问题在
+                    <code style="font-family: var(--font-mono); font-size: 13px;">kb-finance</code>
+                    与
+                    <code style="font-family: var(--font-mono); font-size: 13px;">kb-products</code>
+                    两个知识库下做了全局向量 + 意图定向的合并检索，并通过 <em>MCP·jira</em> 查询了是否有最新例外申请<span class="cite">[4]</span>。<span class="stream-cursor"></span>
+                  </p>
+                </article>
+
+                <!-- Sources block -->
+                <div class="sources-block">
+                  <div class="sources-head">
+                    <h4>4 条引用证据 · 2 个知识库</h4>
+                    <span class="meta">rerank by bce-rerank-v2 · top-4 / 17</span>
+                  </div>
+                  <div class="sources-grid">
+                    <article class="source-card">
+                      <div class="source-meta">
+                        <span>[1] kb-finance / 差旅管理办法</span>
+                        <span class="ch">vector-global</span>
+                      </div>
+                      <div class="source-title">
+                        第 4.2 节 · 客户招待餐费分级标准
+                      </div>
+                      <div class="source-snippet">
+                        "针对一线及新一线城市，单人单餐<b>报销上限为 500 元</b>，包含酒水类目；其他城市统一适用 300 元..."
+                      </div>
+                      <div class="source-foot">
+                        <div class="score-bar">
+                          score 0.91
+                          <div class="track">
+                            <div class="fill" style="width: 91%"></div>
+                          </div>
+                        </div>
+                        <a class="source-open" href="#">OPEN →</a>
+                      </div>
+                    </article>
+
+                    <article class="source-card">
+                      <div class="source-meta">
+                        <span>[2] kb-finance / 出行手册</span>
+                        <span class="ch">intent-directed</span>
+                      </div>
+                      <div class="source-title">
+                        第 2.1 节 · 公共交通工具舱位
+                      </div>
+                      <div class="source-snippet">
+                        "P5 及以下员工出差默认<b>高铁二等座</b>；单程行车时间超过 4 小时，经直属上级批准可改为一等座..."
+                      </div>
+                      <div class="source-foot">
+                        <div class="score-bar">
+                          score 0.88
+                          <div class="track">
+                            <div class="fill" style="width: 88%"></div>
+                          </div>
+                        </div>
+                        <a class="source-open" href="#">OPEN →</a>
+                      </div>
+                    </article>
+
+                    <article class="source-card">
+                      <div class="source-meta">
+                        <span>[3] kb-finance / 招待登记 SOP</span>
+                        <span class="ch">vector-global</span>
+                      </div>
+                      <div class="source-title">事前/事后报备流程图</div>
+                      <div class="source-snippet">
+                        "原则上需在<b>招待发生前 24 小时</b>提交《客户招待登记表》；逾期需补交招待说明并由 VP 二审..."
+                      </div>
+                      <div class="source-foot">
+                        <div class="score-bar">
+                          score 0.83
+                          <div class="track">
+                            <div class="fill" style="width: 83%"></div>
+                          </div>
+                        </div>
+                        <a class="source-open" href="#">OPEN →</a>
+                      </div>
+                    </article>
+
+                    <article class="source-card">
+                      <div class="source-meta">
+                        <span>[4] mcp·jira / FINANCE-2241</span>
+                        <span class="ch">mcp-tool</span>
+                      </div>
+                      <div class="source-title">最新例外申请 · 截至今日无生效</div>
+                      <div class="source-snippet">
+                        "查询 query=&lt;客户招待 上海 例外&gt; 命中 3 条已关闭工单，<b>无任何 in-progress 例外审批</b>影响默认标准..."
+                      </div>
+                      <div class="source-foot">
+                        <div class="score-bar">
+                          score 0.77
+                          <div class="track">
+                            <div class="fill" style="width: 77%"></div>
+                          </div>
+                        </div>
+                        <a class="source-open" href="#">OPEN →</a>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+
+                <!-- MCP tool call card -->
+                <article class="mcp-card">
+                  <header class="mcp-head">
+                    <div class="dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <span class="title">mcp · localhost:9099 · jsonrpc 2.0</span>
+                    <span class="badge badge-on-dark">200 · 488 ms</span>
+                  </header>
+                  <div class="mcp-body">
+                    <div>
+                      <div class="mcp-section-label">REQUEST · jira.search</div>
+                      <pre class="codeblock">{
+  <span class="tok-key">"method"</span>: <span class="tok-str">"tools/call"</span>,
+  <span class="tok-key">"params"</span>: {
+    <span class="tok-key">"name"</span>: <span class="tok-str">"jira.search"</span>,
+    <span class="tok-key">"arguments"</span>: {
+      <span class="tok-key">"jql"</span>: <span class="tok-str">"project = FINANCE AND text ~ \"客户招待 上海\""</span>,
+      <span class="tok-key">"limit"</span>: <span class="tok-num">5</span>,
+      <span class="tok-key">"include_closed"</span>: <span class="tok-bool">true</span>
+    }
+  }
+}</pre>
+                    </div>
+                    <div>
+                      <div class="mcp-section-label">RESULT · 3 hits</div>
+                      <dl class="mcp-result">
+                        <dt>FINANCE-2241</dt>
+                        <dd>
+                          上海招待餐费追加申请 · <code>status=closed</code> · 关闭原因：撤回
+                        </dd>
+                        <dt>FINANCE-2190</dt>
+                        <dd>
+                          客户餐标提涨议案 · <code>status=rejected</code> · 维持现行 500/300 标准
+                        </dd>
+                        <dt>FINANCE-2114</dt>
+                        <dd>
+                          上海招待酒水例外 · <code>status=closed</code> · 仅限单次活动
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- Toolbar -->
+                <div class="answer-toolbar">
+                  <button class="tool-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 11l5-5 5 5M12 6v14"/></svg>
+                    Copy
+                  </button>
+                  <button class="tool-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                    Regenerate
+                  </button>
+                  <button class="tool-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 9V5a3 3 0 0 0-6 0v4M3 9h18l-1 12H4L3 9Z"/></svg>
+                    Save to KB
+                  </button>
+                  <div class="tool-divider"></div>
+                  <button class="tool-btn active">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 11 4 4 6-8"/></svg>
+                    Helpful
+                  </button>
+                  <button class="tool-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m17 13-4-4-6 8"/></svg>
+                    Not quite
+                  </button>
+                  <span class="tool-spacer">trace · 0xae1c-2 · 1.34s</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Coral CTA band -->
+            <section class="coral-band">
+              <div class="coral-band-text">
+                <div class="eyebrow">CONTINUE THE THREAD</div>
+                <h3>需要起草一封正式的招待登记说明邮件吗？</h3>
+                <p>
+                  Ragent 会基于上面这次检索结果，结合你过往的写作风格生成一份草稿，发送前你可以逐句修改。
+                </p>
+              </div>
+              <div class="coral-band-actions">
+                <button class="btn btn-cream-on-coral">起草邮件</button>
+                <button class="btn btn-on-dark">下次再说</button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Composer (sticky bottom) -->
+        <div class="composer-wrap">
+          <div class="composer">
+            <textarea
+              class="composer-input"
+              rows="1"
+              placeholder="继续这段对话，或换个角度问 Ragent ⟶ 试着问『起草邮件给客户对接人』"
+            ></textarea>
+            <div class="composer-row">
+              <div class="composer-row-left">
+                <button class="composer-chip is-on">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                  深度思考
+                </button>
+                <button class="composer-chip">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+                  附加文档
+                </button>
+                <button class="composer-chip">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M2 12h20"/></svg>
+                  调 MCP 工具
+                </button>
+                <button class="composer-chip">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h18M3 6h18M3 18h12"/></svg>
+                  rag-core
+                </button>
+              </div>
+              <button class="composer-send" aria-label="Send">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M5 12h14M13 6l6 6-6 6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="composer-hint">
+            Enter 发送 · Shift + Enter 换行 · ⌘ J 切换深度思考
+          </div>
+        </div>
+      </main>
+
+      <!-- ============================================
+           RIGHT INSPECTOR
+           ============================================ -->
+      <aside class="inspector">
+        <div class="insp-head">
+          <h3>Thinking trace</h3>
+          <span class="ms">total 1.34s</span>
+        </div>
+
+        <div class="insp-tabs" role="tablist">
+          <div class="insp-tab active">Pipeline</div>
+          <div class="insp-tab">Routing</div>
+          <div class="insp-tab">Memory</div>
+        </div>
+
+        <div class="timeline">
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">术语归一化</span>
+              <span class="ms">12 ms</span>
+            </div>
+            <div class="body-line">
+              将「请客户吃晚饭」映射到知识库标准术语「客户招待餐费」。
+            </div>
+            <div class="chips">
+              <span class="tl-chip">QueryTermMappingService</span>
+              <span class="tl-chip teal">cache hit</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">Multi-Question Rewrite</span>
+              <span class="ms">142 ms</span>
+            </div>
+            <div class="body-line">
+              基于最近 2 轮历史做指代消解，拆分为 3 个独立子问题。
+            </div>
+            <div class="chips">
+              <span class="tl-chip">user-question-rewrite.st</span>
+              <span class="tl-chip">3 sub-Qs</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">意图分类</span>
+              <span class="ms">208 ms</span>
+            </div>
+            <div class="body-line">
+              并行识别：2 类 KB 意图，0 类 SYSTEM，1 类 MCP（jira.search）。
+            </div>
+            <div class="chips">
+              <span class="tl-chip coral">finance.expense</span>
+              <span class="tl-chip coral">finance.travel</span>
+              <span class="tl-chip">mcp.jira</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">多通道检索</span>
+              <span class="ms">381 ms</span>
+            </div>
+            <div class="body-line">
+              vector-global × kb-finance × kb-products 并行 + intent-directed 兜底。
+            </div>
+            <div class="chips">
+              <span class="tl-chip">17 candidates</span>
+              <span class="tl-chip">rerank top-4</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">MCP · jira.search</span>
+              <span class="ms">488 ms</span>
+            </div>
+            <div class="body-line">
+              并行执行，确认无 in-progress 的例外申请影响结论。
+            </div>
+            <div class="chips">
+              <span class="tl-chip">3 hits / 0 active</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot done"></span>
+            <div class="head">
+              <span class="name">流式生成</span>
+              <span class="ms">609 ms</span>
+            </div>
+            <div class="body-line">
+              answer-chat-mcp-kb-mixed.st · sonnet-4-6 · first-token 162 ms。
+            </div>
+            <div class="chips">
+              <span class="tl-chip">PromptScene · MIXED</span>
+              <span class="tl-chip teal">routing healthy</span>
+            </div>
+          </div>
+          <div class="tl-row">
+            <span class="tl-dot pending"></span>
+            <div class="head">
+              <span class="name">下一轮：摘要压缩</span>
+              <span class="ms">pending</span>
+            </div>
+            <div class="body-line">
+              达到 6 轮后触发 conversation-summary.st 压缩历史。
+            </div>
+          </div>
+        </div>
+
+        <div class="insp-card">
+          <div class="insp-card-title">
+            <span class="label">Model routing</span>
+            <a class="more" href="#">view all</a>
+          </div>
+          <div class="insp-model-row">
+            <span class="status-dot closed"></span>
+            <span class="name">claude-sonnet-4-6</span>
+            <span class="latency">162 ms</span>
+            <span class="status-tag closed">closed</span>
+          </div>
+          <div class="insp-model-row">
+            <span class="status-dot closed"></span>
+            <span class="name">bce-rerank-v2</span>
+            <span class="latency">94 ms</span>
+            <span class="status-tag closed">closed</span>
+          </div>
+          <div class="insp-model-row">
+            <span class="status-dot half"></span>
+            <span class="name">qwen3-embedding-1.5b</span>
+            <span class="latency">probe…</span>
+            <span class="status-tag half">half</span>
+          </div>
+          <div class="insp-model-row">
+            <span class="status-dot open"></span>
+            <span class="name">moyu-fallback-gpt4</span>
+            <span class="latency">— ms</span>
+            <span class="status-tag open">open</span>
+          </div>
+        </div>
+
+        <div class="insp-card">
+          <div class="insp-card-title">
+            <span class="label">Memory window</span>
+            <span class="ms" style="font-family: var(--font-mono); font-size: 11px; color: var(--muted);">4 / 6 turns</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <div style="flex: 1; height: 6px; background: var(--hairline); border-radius: var(--r-pill); overflow: hidden;">
+                <div style="width: 66%; height: 100%; background: var(--primary); border-radius: var(--r-pill);"></div>
+              </div>
+              <span style="font-family: var(--font-mono); font-size: 11px; color: var(--muted);">66%</span>
+            </div>
+            <div style="font-size: 12px; color: var(--muted); line-height: 1.45;">
+              再过 2 轮将触发 LLM 摘要压缩，旧消息会被替换为
+              <code style="font-family: var(--font-mono); font-size: 11px;">[summary]</code>
+              token。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      // 轻量交互：tab 切换 + composer 自适应高度 + 引用悬停联动
+      document.querySelectorAll(".insp-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          tab.parentElement
+            .querySelectorAll(".insp-tab")
+            .forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+        });
+      });
+
+      const ta = document.querySelector(".composer-input");
+      if (ta) {
+        ta.addEventListener("input", () => {
+          ta.style.height = "auto";
+          ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+        });
+      }
+
+      // 引用号 hover 时高亮对应来源卡片
+      document.querySelectorAll(".cite").forEach((c, i) => {
+        const idx = (c.textContent.match(/\[(\d+)\]/) || [])[1];
+        if (!idx) return;
+        const card = document.querySelectorAll(".source-card")[
+          parseInt(idx, 10) - 1
+        ];
+        if (!card) return;
+        c.addEventListener("mouseenter", () => {
+          card.style.transform = "translateY(-4px)";
+          card.style.boxShadow = "0 22px 50px -24px rgba(204,120,92,0.45)";
+        });
+        c.addEventListener("mouseleave", () => {
+          card.style.transform = "";
+          card.style.boxShadow = "";
+        });
+      });
+    </script>
+  </body>
+</html>

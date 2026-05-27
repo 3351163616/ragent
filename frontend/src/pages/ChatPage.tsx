@@ -1,14 +1,18 @@
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { AnthropicChatView } from "@/components/chat-anthropic/AnthropicChatView";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { MessageList } from "@/components/chat/MessageList";
+import { EditionSwitcher } from "@/components/common/EditionSwitcher";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useChatStore } from "@/stores/chatStore";
+import { useEditionStore } from "@/stores/editionStore";
 
 export function ChatPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
+  const edition = useEditionStore((state) => state.edition);
   const {
     messages,
     isLoading,
@@ -78,25 +82,37 @@ export function ChatPage() {
     }
   }, [currentSessionId, sessionId, navigate]);
 
+  if (edition === "anthropic") {
+    return (
+      <>
+        <AnthropicChatView />
+        <EditionSwitcher />
+      </>
+    );
+  }
+
   return (
-    <MainLayout>
-      <div className="flex h-full flex-col bg-white">
-        <div className="flex-1 min-h-0">
-          <MessageList
-            messages={messages}
-            isLoading={isLoading}
-            isStreaming={isStreaming}
-            sessionKey={currentSessionId}
-          />
-        </div>
-        {showWelcome ? null : (
-          <div className="relative z-20 bg-white">
-            <div className="mx-auto max-w-[800px] px-6 pt-1 pb-4">
-              <ChatInput />
-            </div>
+    <>
+      <MainLayout>
+        <div className="flex h-full flex-col bg-white">
+          <div className="flex-1 min-h-0">
+            <MessageList
+              messages={messages}
+              isLoading={isLoading}
+              isStreaming={isStreaming}
+              sessionKey={currentSessionId}
+            />
           </div>
-        )}
-      </div>
-    </MainLayout>
+          {showWelcome ? null : (
+            <div className="relative z-20 bg-white">
+              <div className="mx-auto max-w-[800px] px-6 pt-1 pb-4">
+                <ChatInput />
+              </div>
+            </div>
+          )}
+        </div>
+      </MainLayout>
+      <EditionSwitcher />
+    </>
   );
 }
