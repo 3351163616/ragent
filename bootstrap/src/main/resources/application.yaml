@@ -239,12 +239,14 @@ ai:
         model: deepseek-v4-pro
         supports-thinking: true
         max-context-tokens: 200000
+        thinking-parameter: thinking
         priority: 0
       - id: deepseek-v4-flash
         provider: newapi
         model: deepseek-v4-flash
         supports-thinking: true
         max-context-tokens: 200000
+        thinking-parameter: thinking
         priority: 1
       - id: qwen3.6-plus
         provider: newapi

@@ -22,6 +22,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
 import com.nageoffer.ai.ragent.rag.controller.request.ConversationUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationVO;
+import com.nageoffer.ai.ragent.rag.constant.RAGConstant;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationDO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationMessageDO;
 import com.nageoffer.ai.ragent.rag.dao.entity.ConversationSummaryDO;
@@ -34,10 +35,13 @@ import com.nageoffer.ai.ragent.rag.service.ConversationService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationCreateBO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Collectors;
 
 /**
@@ -54,6 +58,8 @@ public class ConversationServiceImpl implements ConversationService {
     private final ConversationSummaryMapper summaryMapper;
     private final MemoryProperties memoryProperties;
     private final ConversationTitleGenerator titleGenerator;
+    @Qualifier("conversationTitleExecutor")
+    private final Executor conversationTitleExecutor;
 
     @Override
     public List<ConversationVO> listByUserId(String userId) {
@@ -97,14 +103,14 @@ public class ConversationServiceImpl implements ConversationService {
         );
 
         if (existing == null) {
-            String title = titleGenerator.generate(question);
             ConversationDO record = ConversationDO.builder()
                     .conversationId(conversationId)
                     .userId(userId)
-                    .title(title)
+                    .title(RAGConstant.DEFAULT_CONVERSATION_TITLE)
                     .lastTime(request.getLastTime())
                     .build();
             conversationMapper.insert(record);
+            submitTitleGeneration(conversationId, userId, question);
             return;
         }
 
@@ -173,6 +179,38 @@ public class ConversationServiceImpl implements ConversationService {
                         .eq(ConversationSummaryDO::getUserId, userId)
                         .eq(ConversationSummaryDO::getDeleted, 0)
         );
+    }
+
+    private void submitTitleGeneration(String conversationId, String userId, String question) {
+        try {
+            conversationTitleExecutor.execute(() -> generateAndUpdateTitle(conversationId, userId, question));
+        } catch (RejectedExecutionException ex) {
+            log.warn("提交会话标题生成任务失败，conversationId={}", conversationId, ex);
+        }
+    }
+
+    private void generateAndUpdateTitle(String conversationId, String userId, String question) {
+        String title = titleGenerator.generate(question);
+        if (StrUtil.isBlank(title)) {
+            return;
+        }
+        int updated = conversationMapper.update(
+                null,
+                Wrappers.lambdaUpdate(ConversationDO.class)
+                        .set(ConversationDO::getTitle, title.trim())
+                        .eq(ConversationDO::getConversationId, conversationId)
+                        .eq(ConversationDO::getUserId, userId)
+                        .eq(ConversationDO::getDeleted, 0)
+                        .and(wrapper -> wrapper
+                                .eq(ConversationDO::getTitle, RAGConstant.DEFAULT_CONVERSATION_TITLE)
+                                .or()
+                                .isNull(ConversationDO::getTitle)
+                                .or()
+                                .eq(ConversationDO::getTitle, ""))
+        );
+        if (updated == 0) {
+            log.debug("跳过会话标题回写，可能已被用户重命名，conversationId={}", conversationId);
+        }
     }
 
 }

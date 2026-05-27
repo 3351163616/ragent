@@ -63,10 +63,37 @@ class GenericOpenAIChatClientTests {
         assertFalse(body.has("reasoning_effort"));
     }
 
+    @Test
+    void shouldUseCandidateThinkingParameterWhenThinkingDisabled() {
+        NewApiChatClient newApiClient = new NewApiChatClient(
+                new OkHttpClient(),
+                new OkHttpClient(),
+                Runnable::run,
+                new LLMRequestLogger(new LLMRequestLogProperties())
+        );
+        AIModelProperties.ModelCandidate candidate = new AIModelProperties.ModelCandidate();
+        candidate.setModel("deepseek-v4-flash");
+        candidate.setThinkingParameter("thinking");
+
+        JsonObject body = newApiClient.buildRequestBody(nonThinkingRequest(),
+                new ModelTarget("deepseek-v4-flash", candidate, new AIModelProperties.ProviderConfig()), true);
+
+        assertEquals("disabled", body.getAsJsonObject("thinking").get("type").getAsString());
+        assertFalse(body.has("enable_thinking"));
+        assertFalse(body.has("reasoning_effort"));
+    }
+
     private ChatRequest thinkingRequest() {
         return ChatRequest.builder()
                 .messages(List.of(ChatMessage.user("hello")))
                 .thinking(true)
+                .build();
+    }
+
+    private ChatRequest nonThinkingRequest() {
+        return ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("hello")))
+                .thinking(false)
                 .build();
     }
 

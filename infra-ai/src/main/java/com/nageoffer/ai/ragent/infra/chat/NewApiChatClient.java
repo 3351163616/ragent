@@ -30,13 +30,13 @@ import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
-public class NewApiChatClient extends AbstractOpenAIStyleChatClient {
+public class NewApiChatClient extends GenericOpenAIChatClient {
 
     public NewApiChatClient(OkHttpClient syncHttpClient,
                             OkHttpClient streamingHttpClient,
                             Executor modelStreamExecutor,
                             LLMRequestLogger requestLogger) {
-        super(syncHttpClient, streamingHttpClient, modelStreamExecutor, requestLogger);
+        super(ModelProvider.NEW_API.getId(), syncHttpClient, streamingHttpClient, modelStreamExecutor, requestLogger);
     }
 
     @Override

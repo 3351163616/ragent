@@ -37,6 +37,8 @@ import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
 import java.util.List;
 import java.util.Optional;
 
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.DEFAULT_CONVERSATION_TITLE;
+
 /**
  * 流式聊天事件处理器 —— RAG 管线中"LLM 流式生成"阶段的核心回调实现
  * <p>
@@ -369,6 +371,6 @@ public class StreamChatEventHandler implements StreamCallback, CitationAwareStre
         if (conversation != null && StrUtil.isNotBlank(conversation.getTitle())) {
             return conversation.getTitle();
         }
-        return "新对话";
+        return DEFAULT_CONVERSATION_TITLE;
     }
 }

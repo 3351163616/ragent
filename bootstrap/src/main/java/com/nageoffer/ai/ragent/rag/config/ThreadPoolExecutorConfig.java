@@ -155,6 +155,25 @@ public class ThreadPoolExecutorConfig {
     }
 
     /**
+     * 会话标题生成线程池
+     */
+    @Bean
+    public Executor conversationTitleExecutor() {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                1,
+                Math.max(2, CPU_COUNT >> 1),
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(200),
+                ThreadFactoryBuilder.create()
+                        .setNamePrefix("conversation_title_executor_")
+                        .build(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        return TtlExecutors.getTtlExecutor(executor);
+    }
+
+    /**
      * 模型流式输出线程池
      */
     @Bean

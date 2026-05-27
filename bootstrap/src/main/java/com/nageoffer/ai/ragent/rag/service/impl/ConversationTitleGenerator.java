@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CONVERSATION_TITLE_PROMPT_PATH;
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.DEFAULT_CONVERSATION_TITLE;
 
 /**
  * 会话标题生成器
@@ -75,7 +76,7 @@ public class ConversationTitleGenerator {
             return llmService.chat(request, internalChatModelSelector.modelId());
         } catch (Exception ex) {
             log.warn("生成会话标题失败", ex);
-            return "新对话";
+            return DEFAULT_CONVERSATION_TITLE;
         }
     }
 }

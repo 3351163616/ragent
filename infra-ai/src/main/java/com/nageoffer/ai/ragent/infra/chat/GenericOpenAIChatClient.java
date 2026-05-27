@@ -35,6 +35,7 @@ public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
 
     private static final String THINKING_PARAMETER_ENABLE_THINKING = "enable_thinking";
     private static final String THINKING_PARAMETER_REASONING_EFFORT = "reasoning_effort";
+    private static final String THINKING_PARAMETER_THINKING = "thinking";
     private static final String THINKING_PARAMETER_NONE = "none";
     private static final String DEFAULT_REASONING_EFFORT = "medium";
 
@@ -66,12 +67,20 @@ public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
 
     @Override
     protected void customizeRequestBody(JsonObject body, ChatRequest request, ModelTarget target) {
-        if (!Boolean.TRUE.equals(request.getThinking())) {
+        AIModelProperties.ProviderConfig provider = target == null ? null : target.provider();
+        String thinkingParameter = resolveThinkingParameter(provider, target);
+        boolean thinkingEnabled = Boolean.TRUE.equals(request.getThinking());
+        if (THINKING_PARAMETER_THINKING.equals(thinkingParameter)) {
+            JsonObject thinking = new JsonObject();
+            thinking.addProperty("type", thinkingEnabled ? "enabled" : "disabled");
+            body.add(THINKING_PARAMETER_THINKING, thinking);
             return;
         }
 
-        AIModelProperties.ProviderConfig provider = target == null ? null : target.provider();
-        String thinkingParameter = normalizeThinkingParameter(provider == null ? null : provider.getThinkingParameter());
+        if (!thinkingEnabled) {
+            return;
+        }
+
         if (THINKING_PARAMETER_REASONING_EFFORT.equals(thinkingParameter)) {
             body.addProperty(THINKING_PARAMETER_REASONING_EFFORT, resolveReasoningEffort(provider));
             return;
@@ -88,6 +97,14 @@ public class GenericOpenAIChatClient extends AbstractOpenAIStyleChatClient {
             return THINKING_PARAMETER_ENABLE_THINKING;
         }
         return parameter.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+    }
+
+    private String resolveThinkingParameter(AIModelProperties.ProviderConfig provider, ModelTarget target) {
+        AIModelProperties.ModelCandidate candidate = target == null ? null : target.candidate();
+        if (candidate != null && candidate.getThinkingParameter() != null && !candidate.getThinkingParameter().isBlank()) {
+            return normalizeThinkingParameter(candidate.getThinkingParameter());
+        }
+        return normalizeThinkingParameter(provider == null ? null : provider.getThinkingParameter());
     }
 
     private String resolveReasoningEffort(AIModelProperties.ProviderConfig provider) {

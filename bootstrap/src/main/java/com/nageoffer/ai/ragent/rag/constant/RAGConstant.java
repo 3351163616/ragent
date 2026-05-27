@@ -104,6 +104,13 @@ public class RAGConstant {
     public static final String CONVERSATION_TITLE_PROMPT_PATH = "prompt/conversation-title.st";
 
     /**
+     * 默认会话标题
+     * <p>
+     * 新会话先使用该标题占位，异步标题生成完成后再回写真实标题
+     */
+    public static final String DEFAULT_CONVERSATION_TITLE = "新对话";
+
+    /**
      * 默认 RAG 问答提示词模板路径
      * 用于指导大模型基于检索到的文档内容进行准确回答，包含严格的事实性约束和链接处理规则
      */

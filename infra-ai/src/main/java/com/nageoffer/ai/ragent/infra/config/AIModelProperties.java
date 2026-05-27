@@ -144,6 +144,11 @@ public class AIModelProperties {
          * 模型最大上下文 Token 数
          */
         private Integer maxContextTokens = 200000;
+
+        /**
+         * 覆盖提供商级思考参数配置：enable_thinking | reasoning_effort | thinking | none
+         */
+        private String thinkingParameter;
     }
 
     /**
@@ -170,7 +175,7 @@ public class AIModelProperties {
 
         /**
          * OpenAI 兼容协议下，开启思考模式时使用的请求参数：
-         * enable_thinking | reasoning_effort | none
+         * enable_thinking | reasoning_effort | thinking | none
          */
         private String thinkingParameter = "enable_thinking";
 
