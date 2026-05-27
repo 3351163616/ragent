@@ -20,6 +20,8 @@ package com.nageoffer.ai.ragent.infra.chat;
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogProperties;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import okhttp3.OkHttpClient;
@@ -37,7 +39,8 @@ class GenericOpenAIChatClientTests {
             "gpt55",
             new OkHttpClient(),
             new OkHttpClient(),
-            Runnable::run
+            Runnable::run,
+            new LLMRequestLogger(new LLMRequestLogProperties())
     );
 
     @Test

@@ -26,6 +26,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.trace.RagStreamTraceSupport;
 import com.nageoffer.ai.ragent.framework.trace.RagStreamTraceSupport.StreamSpan;
 import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger;
+import com.nageoffer.ai.ragent.infra.chat.log.LLMRequestLogger.LogContext;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.enums.ModelCapability;
 import com.nageoffer.ai.ragent.infra.http.HttpMediaTypes;
@@ -36,6 +37,7 @@ import com.nageoffer.ai.ragent.infra.http.ModelUrlResolver;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Call;
+import okhttp3.Headers;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -118,12 +120,14 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
         Request requestHttp = newAuthorizedRequest(provider, target)
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .build();
-        requestLogger.logChatRequest(request, target, requestHttp, reqBody, false);
+        LogContext logContext = requestLogger.logChatRequest(request, target, requestHttp, reqBody, false);
 
         JsonObject respJson;
         try (Response response = syncHttpClient.newCall(requestHttp).execute()) {
+            ResponseBody responseBody = response.body();
+            String body = HttpResponseHelper.readBody(responseBody);
+            requestLogger.logChatResponse(logContext, response, body, null);
             if (!response.isSuccessful()) {
-                String body = HttpResponseHelper.readBody(response.body());
                 log.warn("{} 同步请求失败: status={}, body={}", provider(), response.code(), body);
                 throw new ModelClientException(
                         provider() + " 同步请求失败: HTTP " + response.code(),
@@ -131,8 +135,12 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                         response.code()
                 );
             }
-            respJson = HttpResponseHelper.parseJson(response.body(), provider());
+            if (responseBody == null) {
+                throw new ModelClientException(provider() + " 响应为空", ModelClientErrorType.INVALID_RESPONSE, null);
+            }
+            respJson = gson.fromJson(body, JsonObject.class);
         } catch (IOException e) {
+            requestLogger.logChatResponse(logContext, null, null, null, e);
             throw new ModelClientException(
                     provider() + " 同步请求失败: " + e.getMessage(),
                     ModelClientErrorType.NETWORK_ERROR, null, e);
@@ -154,7 +162,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                 .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
                 .addHeader("Accept", "text/event-stream")
                 .build();
-        requestLogger.logChatRequest(request, target, streamRequest, reqBody, true);
+        LogContext logContext = requestLogger.logChatRequest(request, target, streamRequest, reqBody, true);
 
         Call call = streamingHttpClient.newCall(streamRequest);
         boolean reasoningEnabled = isReasoningEnabledForStream(request);
@@ -169,7 +177,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                     modelStreamExecutor,
                     call,
                     wrappedCallback,
-                    cancelled -> doStream(call, wrappedCallback, cancelled, reasoningEnabled)
+                    cancelled -> doStream(call, wrappedCallback, cancelled, reasoningEnabled, logContext)
             );
             return () -> {
                 try {
@@ -184,12 +192,26 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
         }
     }
 
-    private void doStream(Call call, StreamCallback callback, AtomicBoolean cancelled, boolean reasoningEnabled) {
+    private void doStream(Call call,
+                          StreamCallback callback,
+                          AtomicBoolean cancelled,
+                          boolean reasoningEnabled,
+                          LogContext logContext) {
+        Integer statusCode = null;
+        Headers responseHeaders = null;
+        String rawBody = null;
+        StringBuilder contentBuilder = new StringBuilder();
+        StringBuilder reasoningBuilder = new StringBuilder();
+        int eventCount = 0;
+        boolean completed = false;
+        Throwable error = null;
         try (Response response = call.execute()) {
+            statusCode = response.code();
+            responseHeaders = response.headers();
             if (!response.isSuccessful()) {
-                String body = HttpResponseHelper.readBody(response.body());
+                rawBody = HttpResponseHelper.readBody(response.body());
                 throw new ModelClientException(
-                        provider() + " 流式请求失败: HTTP " + response.code() + " - " + body,
+                        provider() + " 流式请求失败: HTTP " + response.code() + " - " + rawBody,
                         ModelClientErrorType.fromHttpStatus(response.code()),
                         response.code()
                 );
@@ -199,7 +221,6 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                 throw new ModelClientException(provider() + " 流式响应为空", ModelClientErrorType.INVALID_RESPONSE, null);
             }
             BufferedSource source = body.source();
-            boolean completed = false;
             while (!cancelled.get()) {
                 String line = source.readUtf8Line();
                 if (line == null) {
@@ -208,12 +229,15 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                 if (line.isBlank()) {
                     continue;
                 }
+                eventCount++;
                 try {
                     OpenAIStyleSseParser.ParsedEvent event = OpenAIStyleSseParser.parseLine(line, gson, reasoningEnabled);
                     if (event.hasReasoning()) {
+                        reasoningBuilder.append(event.reasoning());
                         callback.onThinking(event.reasoning());
                     }
                     if (event.hasContent()) {
+                        contentBuilder.append(event.content());
                         callback.onContent(event.content());
                     }
                     if (event.completed()) {
@@ -233,11 +257,25 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                 throw new ModelClientException(provider() + " 流式响应异常结束", ModelClientErrorType.INVALID_RESPONSE, null);
             }
         } catch (Exception e) {
+            error = e;
             if (!cancelled.get()) {
                 callback.onError(e);
             } else {
                 log.info("{} 流式响应取消期间产生异常（可忽略）: {}", provider(), e.getMessage());
             }
+        } finally {
+            requestLogger.logChatStreamResponse(
+                    logContext,
+                    statusCode,
+                    responseHeaders,
+                    contentBuilder.toString(),
+                    reasoningBuilder.toString(),
+                    eventCount,
+                    completed,
+                    cancelled.get(),
+                    rawBody,
+                    error
+            );
         }
     }
 

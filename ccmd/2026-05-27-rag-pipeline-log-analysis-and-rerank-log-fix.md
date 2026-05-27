@@ -1,0 +1,121 @@
+# RAG 对话管线日志逐行分析 + RerankPostProcessor 日志修正
+
+## 摘要
+
+本次会话对 Ragent 的两条真实 RAG 请求日志（"你好"闲聊 & "拼多多开票信息"业务查询）做了完整的逐阶段拆解，深入到线程池、调用链、分数阈值语义层面。期间发现 `RerankPostProcessor` 的日志措辞有歧义（"输入"一词既可指送 reranker 的候选数，也可指阈值过滤函数的输入数），已修正。同时顺带发现了 reranker 实现中几个更隐蔽的分数语义不一致问题（未修复，记录在案）。
+
+## 背景与目标
+
+用户在准备 Agentic RAG 项目的深度答辩，需要：
+1. 能对着真实日志把每一条 INFO 对应到代码里的哪个类、哪个方法、为什么在那个线程上执行
+2. 能回答"为什么这样设计"而非"用了什么技术栈"
+3. 能识别日志中暴露的优化空间和潜在问题
+
+## 关键发现
+
+### "你好"闲聊请求的完整管线
+
+入口 `RAGChatServiceImpl.streamChat()` → 记忆加载（新会话无历史）→ 术语归一化（冷启动从 DB 加载 14 条规则到 Redis，一次性开销 ~100ms）→ LLM 查询改写（~6.4s，"你好"无拆分）→ 意图树加载（冷启动 DB→Redis，一次性 ~130ms）→ LLM 意图识别（~5.5s，返回空意图）→ 仅 VectorGlobalSearch 兜底（3 路并行 embed，召回 43 chunk，阈值 0.55 全部过滤掉）→ 0 chunk 进后处理 → 走系统兜底回答。
+
+热点：两次 LLM 调用（改写 + 意图）合计 ~12s，对寒暄场景是显著浪费。优化方向是超短问题/纯寒暄早停。
+
+### "拼多多开票信息"业务查询的双通道检索
+
+意图识别命中"财务发票"节点（score=0.78，`demo-group-finance`，collection `ragentdemogroup`）→ 因 0.78 属"中等置信度"，同时启用 IntentDirectedSearch + VectorGlobalSearch 双通道 → 通道间并行、通道内并行。
+
+### 同一查询被 Embedding 4 次的浪费
+
+`AbstractParallelRetriever<T>` 模板方法中，embed 调用落在每个 target 的 lambda 内部，N 个 target = N 次 embed。本例中 IntentDirected 1 次 + VectorGlobal 3 次 = 4 次，结果向量完全相同（bge-m3 确定性）。延迟上因为是并行所以和 1 次相当（~70ms），但 token 费用 4 倍（虽然绝对值极低）。这是 `2026-05-27-query-embedding-reuse-code-review.md` 那次重构要解决的问题。
+
+### 意图通道 vs 全局通道的阈值策略差异
+
+| 通道 | 通道内分数过滤 | 理由 |
+|---|---|---|
+| `VectorGlobalSearch` | 有（0.55） | 全局广撒网，必须门槛拦截噪声 |
+| `IntentDirectedSearch` | 无 | 意图分类器已经做了语义层过滤，通道内信任意图 |
+
+两者的"精准筛选"统一交给下游 Rerank。
+
+### 意图通道的 topK 倍率
+
+意图节点配置 `topK=6`，但 `IntentDirectedSearchChannel` 按 `topK × multiplier` 实际召回 12 个。设计意图：召回阶段宽松、rerank 阶段严格。Embedding 是"语义相似"，rerank 是"问答相关"，两个语义不同。
+
+## 实现细节 / 代码片段
+
+### 已修正的日志
+
+`bootstrap/src/main/java/com/nageoffer/ai/ragent/rag/core/retrieve/postprocessor/RerankPostProcessor.java`
+
+修改前（有歧义）：
+```
+Rerank 分数过滤完成，阈值：0.2，输入：6，输出：1
+```
+
+修改后（明确语义）：
+```java
+// process() 方法内新增一行
+log.info("Rerank 开始 - 送 reranker 候选数：{}，请求 top_n：{}", chunks.size(), topN);
+
+// filterByMinScore() 内修正措辞
+log.info("Rerank 阈值过滤完成，阈值：{}，rerank 返回：{}，阈值后保留：{}",
+        minScore, chunks.size(), filtered.size());
+```
+
+修正后同样请求的日志预期输出：
+```
+Rerank 开始 - 送 reranker 候选数：12，请求 top_n：6
+当前使用Rerank模型: modelId=bge-reranker-v2-m3, ...
+Rerank 阈值过滤完成，阈值：0.2，rerank 返回：6，阈值后保留：1
+```
+
+### RerankPostProcessor 完整调用链（已验证）
+
+```
+RerankPostProcessor.process(12 chunks)
+  → rerankService.rerank(query, 12 chunks, topN = 6)
+    → SiliconFlowRerankClient.rerank(query, 12, 6)
+      → 按 id 去重（12→12）
+      → 12 > 6，进入 doRerank
+      → 全部 12 个 documents 塞进 HTTP body，top_n=6 发给 SiliconFlow
+      → 服务端对 12 个全部打分，返回得分最高的 6 个
+    → 返回 6 个（带 rerank score）
+  → filterByMinScore(6, minScore=0.2)
+  → 最终 1 个
+```
+
+关键：**客户端不做截断，12 个全被 reranker 看到**。top_n=6 是服务端的行为。
+
+## 决策与权衡
+
+### 日志修正为什么只改措辞不改逻辑
+
+日志歧义是表达问题不是逻辑问题。12 个全送 reranker 的行为本身是合理的。改措辞让后续排查时不再困惑"输入 6 从哪来"即可。
+
+### 发现但未修复的隐蔽问题
+
+以下三个问题在代码审查中发现，本次未修复（改动范围超出日志修正）：
+
+1. **top_n 和 minScore 的截断顺序**：reranker 按 top_n=6 截断后，minScore 才过滤。如果 12 个中有 9 个 rerank 分数 >0.2，只能拿到 6 个。更合理的做法是先让 reranker 全返回带分数，minScore 过滤完再 limit(K)。
+
+2. **`SiliconFlowRerankClient` 第 85 行早返**：`dedup.size() <= topN` 时直接返回原列表，不调 rerank。此时 chunk 上的 score 还是 embedding 相似度，但 `filterByMinScore` 用 rerank 的 0.2 阈值去过滤 —— 分数语义错位。要么始终走 rerank，要么早返分支跳过 minScore 过滤。
+
+3. **第 171-180 行补齐逻辑**：reranker 返回不足 topN 时按原顺序补齐，补齐的 chunk 不带 rerank score，同样让 0.2 阈值产生歧义。
+
+## 备注与提醒
+
+### 答辩可用的高质量问题
+
+- "流式 LLM 首包失败的无感切换"是技术含量最高的部分（ProbeStreamBridge + ProbeBufferingCallback 装饰器缓冲，two-phase commit 思想搬到 SSE 事件层）
+- 自己清楚边界：中段失败只能放弃，没做 token 级状态保存来支持"换模型续写"
+- embedding 4 倍浪费的 trade-off：钱浪费一点（单价极低），时间没浪费（并行），工程上改动跨多层接口 + 牺牲容错隔离性
+
+### 线程池命名对照表
+
+| 日志线程名前缀 | 对应 Bean | 用途 |
+|---|---|---|
+| `ntry_executor_*` | `chatEntryExecutor` | 对话入口调度 |
+| `sify_executor_*` | `intentClassifyThreadPoolExecutor` | 意图识别 |
+| `text_executor_*` | `ragContextThreadPoolExecutor` | 上下文构建 |
+| `eval_executor_*` | `ragRetrievalThreadPoolExecutor` | 通道间并行检索 |
+| `val_executor_*` | `ragInnerRetrievalThreadPoolExecutor` | 通道内多 Collection 并行 |
+| `model_stream_*` | `modelStreamExecutor` | 流式 Chat SSE |

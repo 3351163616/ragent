@@ -45,6 +45,11 @@ public class LLMRequestLogProperties {
     private boolean includeHeaders = true;
 
     /**
+     * 是否记录 LLM 响应体
+     */
+    private boolean includeResponseBody = false;
+
+    /**
      * 是否格式化 JSON 文件
      */
     private boolean prettyPrint = true;
