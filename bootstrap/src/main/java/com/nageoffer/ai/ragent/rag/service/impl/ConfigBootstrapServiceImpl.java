@@ -125,6 +125,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
 
     @Override
     public ConfigBootstrapRunVO createRun(ConfigBootstrapCreateRequest requestParam) {
+        long startedAt = System.currentTimeMillis();
         ConfigBootstrapCreateRequest request = requestParam == null ? new ConfigBootstrapCreateRequest() : requestParam;
         List<String> kbIds = normalizeIds(request.getKbIds());
         boolean useLlm = request.getUseLlm() == null || request.getUseLlm();
@@ -147,12 +148,32 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                 .updateBy(UserContext.getUsername())
                 .build();
         runMapper.insert(run);
+        log.info(
+                "AI 初始化配置任务开始: runId={}, kbScope={}, maxDocuments={}, maxChunksPerDocument={}, useLlm={}",
+                run.getId(),
+                kbIds.isEmpty() ? "ALL" : kbIds.size(),
+                maxDocuments,
+                maxChunksPerDocument,
+                useLlm
+        );
 
         try {
             List<ConfigBootstrapDocumentSample> samples = collectSamples(kbIds, maxDocuments, maxChunksPerDocument);
             if (samples.isEmpty()) {
                 throw new ClientException("没有可用于初始化配置的知识库文档或分块");
             }
+            int sampledDocumentCount = (int) samples.stream()
+                    .map(ConfigBootstrapDocumentSample::docId)
+                    .distinct()
+                    .count();
+            int sampledChunkCount = samples.stream().mapToInt(sample -> sample.chunks().size()).sum();
+            log.info(
+                    "AI 初始化配置采样完成: runId={}, documents={}, chunks={}, elapsedMs={}",
+                    run.getId(),
+                    sampledDocumentCount,
+                    sampledChunkCount,
+                    System.currentTimeMillis() - startedAt
+            );
 
             ConfigBootstrapSuggestion suggestion = generateSuggestions(samples, useLlm);
             List<TermMappingCandidateDO> termCandidates = toTermCandidates(run.getId(), suggestion.termMappings());
@@ -161,8 +182,8 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             intentCandidates.forEach(intentCandidateMapper::insert);
 
             run.setStatus(STATUS_COMPLETED);
-            run.setDocumentCount((int) samples.stream().map(ConfigBootstrapDocumentSample::docId).distinct().count());
-            run.setChunkCount(samples.stream().mapToInt(sample -> sample.chunks().size()).sum());
+            run.setDocumentCount(sampledDocumentCount);
+            run.setChunkCount(sampledChunkCount);
             run.setTermCandidateCount(termCandidates.size());
             run.setIntentCandidateCount(intentCandidates.size());
             run.setSummary(String.format(
@@ -174,12 +195,27 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             ));
             run.setUpdateBy(UserContext.getUsername());
             runMapper.updateById(run);
+            log.info(
+                    "AI 初始化配置任务完成: runId={}, documents={}, chunks={}, termCandidates={}, intentCandidates={}, elapsedMs={}",
+                    run.getId(),
+                    run.getDocumentCount(),
+                    run.getChunkCount(),
+                    termCandidates.size(),
+                    intentCandidates.size(),
+                    System.currentTimeMillis() - startedAt
+            );
         } catch (Exception ex) {
             log.error("AI 初始化配置候选生成失败, runId={}", run.getId(), ex);
             run.setStatus(STATUS_FAILED);
             run.setErrorMessage(ex.getMessage());
             run.setUpdateBy(UserContext.getUsername());
             runMapper.updateById(run);
+            log.info(
+                    "AI 初始化配置任务失败: runId={}, elapsedMs={}, error={}",
+                    run.getId(),
+                    System.currentTimeMillis() - startedAt,
+                    ex.getMessage()
+            );
         }
 
         return queryRun(run.getId());
@@ -369,12 +405,27 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
     }
 
     private ConfigBootstrapSuggestion generateSuggestions(List<ConfigBootstrapDocumentSample> samples, boolean useLlm) {
+        long startedAt = System.currentTimeMillis();
         ConfigBootstrapSuggestion heuristic = heuristicGenerator.generate(samples);
+        log.info(
+                "AI 初始化配置规则候选完成: documents={}, chunks={}, termCandidates={}, intentCandidates={}, useLlm={}",
+                samples.size(),
+                samples.stream().mapToInt(sample -> sample.chunks().size()).sum(),
+                safeTerms(heuristic).size(),
+                safeIntents(heuristic).size(),
+                useLlm
+        );
         if (!useLlm) {
             return heuristic;
         }
         try {
             String prompt = promptTemplateLoader.render(PROMPT_PATH, Map.of("documents", gson.toJson(samples)));
+            log.info(
+                    "AI 初始化配置 LLM 候选生成开始: documents={}, chunks={}, promptChars={}",
+                    samples.size(),
+                    samples.stream().mapToInt(sample -> sample.chunks().size()).sum(),
+                    prompt.length()
+            );
             ChatRequest request = ChatRequest.builder()
                     .scene("config-bootstrap")
                     .messages(List.of(ChatMessage.user(prompt)))
@@ -384,9 +435,24 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     .build();
             String raw = llmService.chat(request, internalChatModelSelector.modelId());
             ConfigBootstrapSuggestion llmSuggestion = candidateParser.parse(raw);
-            return mergeSuggestions(llmSuggestion, heuristic);
+            ConfigBootstrapSuggestion merged = mergeSuggestions(llmSuggestion, heuristic);
+            log.info(
+                    "AI 初始化配置 LLM 候选生成完成: llmTerms={}, llmIntents={}, mergedTerms={}, mergedIntents={}, elapsedMs={}",
+                    safeTerms(llmSuggestion).size(),
+                    safeIntents(llmSuggestion).size(),
+                    safeTerms(merged).size(),
+                    safeIntents(merged).size(),
+                    System.currentTimeMillis() - startedAt
+            );
+            return merged;
         } catch (Exception ex) {
             log.warn("AI 初始化配置 LLM 候选生成失败，使用启发式候选兜底", ex);
+            log.info(
+                    "AI 初始化配置使用规则候选兜底: termCandidates={}, intentCandidates={}, elapsedMs={}",
+                    safeTerms(heuristic).size(),
+                    safeIntents(heuristic).size(),
+                    System.currentTimeMillis() - startedAt
+            );
             return heuristic;
         }
     }
@@ -430,6 +496,12 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
     private List<ConfigBootstrapDocumentSample> collectSamples(List<String> kbIds,
                                                                int maxDocuments,
                                                                int maxChunksPerDocument) {
+        log.info(
+                "AI 初始化配置采样开始: kbScope={}, maxDocuments={}, maxChunksPerDocument={}",
+                kbIds.isEmpty() ? "ALL" : kbIds.size(),
+                maxDocuments,
+                maxChunksPerDocument
+        );
         List<KnowledgeBaseDO> knowledgeBases = knowledgeBaseMapper.selectList(
                 Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                         .in(CollUtil.isNotEmpty(kbIds), KnowledgeBaseDO::getId, kbIds)
@@ -447,6 +519,11 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                         .eq(KnowledgeDocumentDO::getEnabled, 1)
                         .orderByDesc(KnowledgeDocumentDO::getUpdateTime)
         ).stream().limit(maxDocuments).toList();
+        log.info(
+                "AI 初始化配置采样文档命中: kbCount={}, documentCount={}",
+                knowledgeBases.size(),
+                documents.size()
+        );
         if (documents.isEmpty()) {
             return List.of();
         }
@@ -477,6 +554,11 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     chunks
             ));
         }
+        log.info(
+                "AI 初始化配置采样明细完成: documentSamples={}, chunkSamples={}",
+                result.size(),
+                result.stream().mapToInt(sample -> sample.chunks().size()).sum()
+        );
         return result;
     }
 

@@ -83,6 +83,17 @@ const formatScore = (value?: number | null) => {
   return `${Math.round(value * 100)}%`;
 };
 
+const isTimeoutError = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const maybeError = error as { code?: unknown; message?: unknown };
+  return (
+    maybeError.code === "ECONNABORTED" ||
+    (typeof maybeError.message === "string" && maybeError.message.toLowerCase().includes("timeout"))
+  );
+};
+
 const parseKbIds = (value?: string | null) => {
   if (!value) return [];
   try {
@@ -234,6 +245,7 @@ export function ConfigBootstrapPage() {
       return;
     }
 
+    const toastId = toast.loading("正在生成候选，LLM 开启时可能需要几分钟，请稍候...");
     try {
       setCreating(true);
       const run = await createConfigBootstrapRun({
@@ -245,9 +257,24 @@ export function ConfigBootstrapPage() {
       setCurrentRun(run);
       setRunPageNo(1);
       await loadRuns(1);
-      toast.success(run.status === "FAILED" ? "任务执行失败，请查看错误信息" : "候选生成完成");
+      toast.success(run.status === "FAILED" ? "任务执行失败，请查看错误信息" : "候选生成完成", {
+        id: toastId
+      });
     } catch (error) {
-      toast.error(getErrorMessage(error, "创建初始化任务失败"));
+      if (isTimeoutError(error)) {
+        toast.warning(
+          "候选生成等待超时，后端任务可能仍在运行。已刷新任务列表，请稍后再点刷新任务查看结果。",
+          {
+            id: toastId,
+            duration: 8000
+          }
+        );
+        await loadRuns(1);
+      } else {
+        toast.error(getErrorMessage(error, "创建初始化任务失败"), {
+          id: toastId
+        });
+      }
       console.error(error);
     } finally {
       setCreating(false);
@@ -350,7 +377,7 @@ export function ConfigBootstrapPage() {
           </Button>
           <Button className="admin-primary-gradient" onClick={handleCreate} disabled={creating}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            生成候选
+            {creating ? "生成中..." : "生成候选"}
           </Button>
         </div>
       </div>
@@ -390,6 +417,12 @@ export function ConfigBootstrapPage() {
                 <Checkbox checked={useLlm} onCheckedChange={(checked) => setUseLlm(Boolean(checked))} />
                 调用 LLM 生成候选
               </label>
+
+              {creating ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  正在生成候选，LLM 开启时可能需要数分钟。任务完成前候选详情不会刷新，可稍后使用刷新任务查看进度。
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

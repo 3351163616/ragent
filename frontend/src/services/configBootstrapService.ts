@@ -1,5 +1,7 @@
 import { api } from "@/services/api";
 
+const CONFIG_BOOTSTRAP_CREATE_TIMEOUT_MS = 10 * 60 * 1000;
+
 export interface PageResult<T> {
   records: T[];
   total: number;
@@ -103,7 +105,9 @@ export async function getConfigBootstrapRuns(
 export async function createConfigBootstrapRun(
   payload: ConfigBootstrapCreatePayload
 ): Promise<ConfigBootstrapRun> {
-  return api.post<ConfigBootstrapRun, ConfigBootstrapRun>("/config-bootstrap/runs", payload);
+  return api.post<ConfigBootstrapRun, ConfigBootstrapRun>("/config-bootstrap/runs", payload, {
+    timeout: CONFIG_BOOTSTRAP_CREATE_TIMEOUT_MS
+  });
 }
 
 export async function getConfigBootstrapRun(runId: string): Promise<ConfigBootstrapRun> {
