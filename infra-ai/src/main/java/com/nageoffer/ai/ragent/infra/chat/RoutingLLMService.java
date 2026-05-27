@@ -18,6 +18,7 @@
 package com.nageoffer.ai.ragent.infra.chat;
 
 import cn.hutool.core.collection.CollUtil;
+import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.errorcode.BaseErrorCode;
 import com.nageoffer.ai.ragent.framework.exception.RemoteException;
@@ -27,6 +28,7 @@ import com.nageoffer.ai.ragent.infra.model.ModelHealthStore;
 import com.nageoffer.ai.ragent.infra.model.ModelRoutingExecutor;
 import com.nageoffer.ai.ragent.infra.model.ModelSelector;
 import com.nageoffer.ai.ragent.infra.model.ModelTarget;
+import com.nageoffer.ai.ragent.infra.token.TokenCounterService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -81,6 +83,8 @@ public class RoutingLLMService implements LLMService {
     private final ModelRoutingExecutor executor;
     /** 首包探测器，作为独立 bean 让 @RagTraceNode AOP 拦截生效 */
     private final LlmFirstPacketProbe firstPacketProbe;
+    /** Token 估算服务，用于请求发出前记录上下文预算 */
+    private final TokenCounterService tokenCounterService;
     /** 按提供商名称索引的 ChatClient 映射表，key 为 provider 标识 */
     private final Map<String, ChatClient> clientsByProvider;
 
@@ -100,11 +104,13 @@ public class RoutingLLMService implements LLMService {
             ModelHealthStore healthStore,
             ModelRoutingExecutor executor,
             LlmFirstPacketProbe firstPacketProbe,
+            TokenCounterService tokenCounterService,
             List<ChatClient> clients) {
         this.selector = selector;
         this.healthStore = healthStore;
         this.executor = executor;
         this.firstPacketProbe = firstPacketProbe;
+        this.tokenCounterService = tokenCounterService;
         this.clientsByProvider = clients.stream()
                 .collect(Collectors.toMap(ChatClient::provider, Function.identity()));
     }
@@ -129,7 +135,10 @@ public class RoutingLLMService implements LLMService {
                 ModelCapability.CHAT,
                 selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking())),
                 target -> clientsByProvider.get(target.candidate().getProvider()),
-                (client, target) -> client.chat(request, target)
+                (client, target) -> {
+                    logTokenEstimate(request, target, false);
+                    return client.chat(request, target);
+                }
         );
     }
 
@@ -142,7 +151,10 @@ public class RoutingLLMService implements LLMService {
                 ModelCapability.CHAT,
                 List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking()))),
                 target -> clientsByProvider.get(target.candidate().getProvider()),
-                (client, target) -> client.chat(request, target)
+                (client, target) -> {
+                    logTokenEstimate(request, target, false);
+                    return client.chat(request, target);
+                }
         );
     }
 
@@ -211,6 +223,7 @@ public class RoutingLLMService implements LLMService {
             // 启动流式请求
             StreamCancellationHandle handle;
             try {
+                logTokenEstimate(request, target, true);
                 handle = client.streamChat(request, bridge, target);
             } catch (Exception e) {
                 // 启动失败：标记不健康，记录错误，尝试下一个
@@ -331,6 +344,47 @@ public class RoutingLLMService implements LLMService {
         );
         callback.onError(finalException);
         return finalException;
+    }
+
+    private void logTokenEstimate(ChatRequest request, ModelTarget target, boolean stream) {
+        Integer inputTokens = estimateInputTokens(request);
+        Integer maxContextTokens = target.candidate().getMaxContextTokens();
+        int outputReserve = request == null || request.getMaxTokens() == null
+                ? 0
+                : Math.max(request.getMaxTokens(), 0);
+        Integer estimatedTotal = inputTokens == null ? null : inputTokens + outputReserve;
+        boolean overLimit = maxContextTokens != null
+                && maxContextTokens > 0
+                && estimatedTotal != null
+                && estimatedTotal > maxContextTokens;
+        log.info(
+                "LLM 请求 Token 估算: mode={}, scene={}, modelId={}, provider={}, inputTokens={}, outputReserve={}, estimatedTotal={}, maxContextTokens={}, overLimit={}",
+                stream ? "stream" : "sync",
+                request == null ? null : request.getScene(),
+                target.id(),
+                target.candidate().getProvider(),
+                inputTokens,
+                outputReserve,
+                estimatedTotal,
+                maxContextTokens,
+                overLimit
+        );
+    }
+
+    private Integer estimateInputTokens(ChatRequest request) {
+        if (request == null || CollUtil.isEmpty(request.getMessages())) {
+            return 0;
+        }
+        int total = 0;
+        for (ChatMessage message : request.getMessages()) {
+            if (message == null) {
+                continue;
+            }
+            Integer contentTokens = tokenCounterService.countTokens(message.getContent());
+            total += contentTokens == null ? 0 : contentTokens;
+            total += 4;
+        }
+        return total;
     }
 
     private ModelTarget resolveTarget(String modelId, boolean deepThinking) {

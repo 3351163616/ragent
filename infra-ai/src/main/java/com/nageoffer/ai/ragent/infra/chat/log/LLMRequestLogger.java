@@ -121,6 +121,16 @@ public class LLMRequestLogger {
         response.put("type", "sync");
         putCommonResponseFields(response, statusCode, headers, error);
         response.put("body", parseBodyForLog(responseBody));
+        JsonElement usage = extractUsage(responseBody);
+        if (usage != null) {
+            response.put("usage", usage);
+            log.info(
+                    "LLM 响应 Token 用量: requestId={}, modelId={}, usage={}",
+                    context.logRecord.get("requestId"),
+                    context.logRecord.get("modelId"),
+                    compactGson.toJson(usage)
+            );
+        }
         writeResponse(context, response);
     }
 
@@ -249,6 +259,24 @@ public class LLMRequestLogger {
         } catch (Exception ignored) {
             return body;
         }
+    }
+
+    private JsonElement extractUsage(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonElement json = JsonParser.parseString(body);
+            if (json != null && json.isJsonObject()) {
+                JsonObject object = json.getAsJsonObject();
+                if (object.has("usage")) {
+                    return object.get("usage");
+                }
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+        return null;
     }
 
     private String sanitize(String value) {

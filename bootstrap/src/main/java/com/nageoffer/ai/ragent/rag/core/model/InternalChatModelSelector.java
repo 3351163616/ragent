@@ -40,4 +40,17 @@ public class InternalChatModelSelector {
                 ? chat.getInternalModel()
                 : chat.getDefaultModel();
     }
+
+    public int maxContextTokens(String modelId) {
+        AIModelProperties.ModelGroup chat = aiModelProperties.getChat();
+        if (!StringUtils.hasText(modelId) || chat == null || chat.getCandidates() == null) {
+            return 200000;
+        }
+        return chat.getCandidates().stream()
+                .filter(candidate -> modelId.equals(candidate.getId()))
+                .map(AIModelProperties.ModelCandidate::getMaxContextTokens)
+                .filter(tokens -> tokens != null && tokens > 0)
+                .findFirst()
+                .orElse(200000);
+    }
 }

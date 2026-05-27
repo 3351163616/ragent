@@ -139,6 +139,11 @@ public class AIModelProperties {
          * 是否支持思考链功能
          */
         private Boolean supportsThinking = false;
+
+        /**
+         * 模型最大上下文 Token 数
+         */
+        private Integer maxContextTokens = 200000;
     }
 
     /**

@@ -172,101 +172,121 @@ ai:
         provider: gpt55
         model: gpt-5.5
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: claude-opus
         provider: moyu
         model: claude-opus-4-7
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: claude-opus-newapi
         provider: newapi
         model: claude-opus-4-7
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: glm-5.1
         provider: glm
         model: glm-5.1
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: mimo-v2.5-pro
         provider: mimo
         model: mimo-v2.5-pro
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: minimax-m2.7
         provider: newapi
         model: minimax-m2.7
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: minimax-m2.5
         provider: newapi
         model: minimax-m2.5
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: kimi-k2.6
         provider: newapi
         model: kimi-k2.6
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: kimi-k2.5
         provider: newapi
         model: kimi-k2.5
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: glm-5.1-newapi
         provider: newapi
         model: glm-5.1
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: glm-5
         provider: newapi
         model: glm-5
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: deepseek-v4-pro
         provider: newapi
         model: deepseek-v4-pro
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 0
       - id: deepseek-v4-flash
         provider: newapi
         model: deepseek-v4-flash
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: qwen3.6-plus
         provider: newapi
         model: qwen3.6-plus
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: qwen3.5-plus
         provider: newapi
         model: qwen3.5-plus
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: mimo-v2-pro
         provider: newapi
         model: mimo-v2-pro
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: mimo-v2-omni
         provider: newapi
         model: mimo-v2-omni
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: mimo-v2.5-pro-newapi
         provider: newapi
         model: mimo-v2.5-pro
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: mimo-v2.5
         provider: newapi
         model: mimo-v2.5
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
       - id: hy3-preview
         provider: newapi
         model: hy3-preview
         supports-thinking: true
+        max-context-tokens: 200000
         priority: 1
 
   embedding:
