@@ -17,6 +17,7 @@ import { RagTraceDetailPage } from "@/pages/admin/traces/RagTraceDetailPage";
 import { SystemSettingsPage } from "@/pages/admin/settings/SystemSettingsPage";
 import { SampleQuestionPage } from "@/pages/admin/sample-questions/SampleQuestionPage";
 import { QueryTermMappingPage } from "@/pages/admin/query-term-mapping/QueryTermMappingPage";
+import { ConfigBootstrapPage } from "@/pages/admin/config-bootstrap/ConfigBootstrapPage";
 import { UserListPage } from "@/pages/admin/users/UserListPage";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -148,6 +149,10 @@ export const router = createBrowserRouter([
       {
         path: "mappings",
         element: <QueryTermMappingPage />
+      },
+      {
+        path: "config-bootstrap",
+        element: <ConfigBootstrapPage />
       },
       {
         path: "users",

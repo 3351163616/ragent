@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ChevronDown,
@@ -18,6 +18,7 @@ import {
   KeyRound,
   Search,
   Settings,
+  Sparkles,
   Upload,
   Users,
   FolderKanban,
@@ -45,10 +46,12 @@ import {
 } from "@/services/knowledgeService";
 import { Avatar } from "@/components/common/Avatar";
 
+type MenuIcon = ComponentType<{ className?: string }>;
+
 type MenuChild = {
   path: string;
   label: string;
-  icon: any;
+  icon: MenuIcon;
   search?: string;
 };
 
@@ -56,7 +59,7 @@ type MenuItem = {
   id?: string;
   path: string;
   label: string;
-  icon: any;
+  icon: MenuIcon;
   search?: string;
   children?: MenuChild[];
 };
@@ -124,6 +127,11 @@ const menuGroups: MenuGroup[] = [
         icon: KeyRound
       },
       {
+        path: "/admin/config-bootstrap",
+        label: "AI 初始化",
+        icon: Sparkles
+      },
+      {
         path: "/admin/traces",
         label: "链路追踪",
         icon: Workflow
@@ -161,6 +169,7 @@ const breadcrumbMap: Record<string, string> = {
   traces: "链路追踪",
   "sample-questions": "示例问题",
   mappings: "关键词映射",
+  "config-bootstrap": "AI 初始化",
   settings: "系统设置",
   users: "用户管理"
 };
