@@ -65,6 +65,21 @@ export interface IntentNodeCandidate {
   updateTime?: string | null;
 }
 
+export interface ConfigBootstrapSampleChunk {
+  chunkId?: string | null;
+  chunkIndex?: number | null;
+  content?: string | null;
+}
+
+export interface ConfigBootstrapSampleDocument {
+  kbId?: string | null;
+  kbName?: string | null;
+  collectionName?: string | null;
+  docId?: string | null;
+  docName?: string | null;
+  chunks?: ConfigBootstrapSampleChunk[];
+}
+
 export interface ConfigBootstrapRun {
   id: string;
   status: string;
@@ -75,6 +90,7 @@ export interface ConfigBootstrapRun {
   termCandidateCount?: number | null;
   intentCandidateCount?: number | null;
   summary?: string | null;
+  sampleJson?: string | null;
   errorMessage?: string | null;
   createTime?: string | null;
   updateTime?: string | null;

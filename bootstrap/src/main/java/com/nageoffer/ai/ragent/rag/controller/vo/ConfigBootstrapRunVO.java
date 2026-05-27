@@ -36,6 +36,7 @@ public class ConfigBootstrapRunVO {
     private Integer termCandidateCount;
     private Integer intentCandidateCount;
     private String summary;
+    private String sampleJson;
     private String errorMessage;
     private Date createTime;
     private Date updateTime;

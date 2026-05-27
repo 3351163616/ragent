@@ -18,6 +18,7 @@
 package com.nageoffer.ai.ragent.rag.core.configbootstrap;
 
 import cn.hutool.core.util.StrUtil;
+import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapDocumentSample.ChunkSample;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestion.IntentNodeSuggestion;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestion.TermMappingSuggestion;
 import com.nageoffer.ai.ragent.rag.enums.IntentKind;
@@ -121,7 +122,9 @@ public class ConfigBootstrapHeuristicGenerator {
         for (ConfigBootstrapDocumentSample sample : samples) {
             List<String> texts = new ArrayList<>();
             texts.add(sample.docName());
-            texts.addAll(sample.chunks() == null ? List.of() : sample.chunks());
+            texts.addAll(sample.chunks() == null
+                    ? List.of()
+                    : sample.chunks().stream().map(ChunkSample::content).toList());
             for (String text : texts) {
                 collectParenthesizedAliases(text, dedup, sample.docName());
                 collectSlashAliases(text, dedup, sample.docName());

@@ -11,6 +11,7 @@ CREATE TABLE t_config_bootstrap_run (
     term_candidate_count   INTEGER       NOT NULL DEFAULT 0,
     intent_candidate_count INTEGER       NOT NULL DEFAULT 0,
     summary                TEXT,
+    sample_json            TEXT,
     error_message          TEXT,
     create_by              VARCHAR(64),
     update_by              VARCHAR(64),

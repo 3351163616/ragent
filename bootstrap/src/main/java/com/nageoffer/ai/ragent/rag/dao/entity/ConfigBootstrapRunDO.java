@@ -47,6 +47,7 @@ public class ConfigBootstrapRunDO {
     private Integer termCandidateCount;
     private Integer intentCandidateCount;
     private String summary;
+    private String sampleJson;
     private String errorMessage;
     private String createBy;
     private String updateBy;

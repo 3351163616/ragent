@@ -31,6 +31,7 @@ import {
   rollbackConfigBootstrapRun,
   type ConfigBootstrapPublishResult,
   type ConfigBootstrapRun,
+  type ConfigBootstrapSampleDocument,
   type IntentNodeCandidate,
   type PageResult,
   type TermMappingCandidate
@@ -104,6 +105,16 @@ const parseKbIds = (value?: string | null) => {
   }
 };
 
+const parseSampleDocuments = (value?: string | null): ConfigBootstrapSampleDocument[] => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 const countByStatus = <T extends { status?: string | null }>(items: T[], status: string) => {
   return items.filter((item) => (item.status || "").toUpperCase() === status).length;
 };
@@ -145,6 +156,58 @@ function PublishResultLine({ result }: { result: ConfigBootstrapPublishResult | 
   );
 }
 
+function SampleDocumentsList({ items }: { items: ConfigBootstrapSampleDocument[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-slate-200">
+      <div className="border-b border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
+        采样明细
+      </div>
+      <div className="max-h-[360px] divide-y divide-slate-100 overflow-auto">
+        {items.map((item, index) => {
+          const chunks = item.chunks || [];
+          return (
+            <div key={item.docId || `${item.docName}-${index}`} className="space-y-2 px-4 py-3">
+              <div className="min-w-0">
+                <div
+                  className="truncate text-sm font-medium text-slate-700"
+                  title={item.docName || ""}
+                >
+                  {item.docName || item.docId || "-"}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>{item.kbName || item.kbId || "未知知识库"}</span>
+                  {item.collectionName ? <span>{item.collectionName}</span> : null}
+                  <span>{chunks.length} chunks</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {chunks.map((chunk, chunkIndex) => (
+                  <div
+                    key={chunk.chunkId || `${item.docId}-${chunkIndex}`}
+                    className="rounded-md bg-slate-50 px-3 py-2"
+                  >
+                    <div className="mb-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                      <span>chunk-{chunk.chunkIndex ?? chunkIndex}</span>
+                      {chunk.chunkId ? <span className="font-mono">{chunk.chunkId}</span> : null}
+                    </div>
+                    <div
+                      className="line-clamp-2 break-words text-xs leading-5 text-slate-600"
+                      title={chunk.content || ""}
+                    >
+                      {chunk.content || "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ConfigBootstrapPage() {
   const [runsPage, setRunsPage] = useState<PageResult<ConfigBootstrapRun> | null>(null);
   const [runPageNo, setRunPageNo] = useState(1);
@@ -167,6 +230,7 @@ export function ConfigBootstrapPage() {
 
   const termMappings = useMemo(() => currentRun?.termMappings || [], [currentRun?.termMappings]);
   const intentNodes = useMemo(() => currentRun?.intentNodes || [], [currentRun?.intentNodes]);
+  const sampleDocuments = useMemo(() => parseSampleDocuments(currentRun?.sampleJson), [currentRun?.sampleJson]);
   const selectedAllKb = selectedKbIds.length === 0;
 
   const stats = useMemo(() => {
@@ -570,6 +634,8 @@ export function ConfigBootstrapPage() {
                       {currentRun.summary}
                     </div>
                   ) : null}
+
+                  <SampleDocumentsList items={sampleDocuments} />
 
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                     <Badge variant="secondary">待审核 {stats.pending}</Badge>

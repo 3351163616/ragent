@@ -25,6 +25,13 @@ public record ConfigBootstrapDocumentSample(
         String collectionName,
         String docId,
         String docName,
-        List<String> chunks
+        List<ChunkSample> chunks
 ) {
+
+    public record ChunkSample(
+            String chunkId,
+            Integer chunkIndex,
+            String content
+    ) {
+    }
 }

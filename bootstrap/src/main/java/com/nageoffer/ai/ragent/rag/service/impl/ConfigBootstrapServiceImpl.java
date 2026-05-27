@@ -48,6 +48,7 @@ import com.nageoffer.ai.ragent.rag.controller.vo.IntentNodeCandidateVO;
 import com.nageoffer.ai.ragent.rag.controller.vo.TermMappingCandidateVO;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapCandidateParser;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapDocumentSample;
+import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapDocumentSample.ChunkSample;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapHeuristicGenerator;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestion;
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestion.IntentNodeSuggestion;
@@ -174,6 +175,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     sampledChunkCount,
                     System.currentTimeMillis() - startedAt
             );
+            run.setSampleJson(gson.toJson(samples));
 
             ConfigBootstrapSuggestion suggestion = generateSuggestions(samples, useLlm);
             List<TermMappingCandidateDO> termCandidates = toTermCandidates(run.getId(), suggestion.termMappings());
@@ -534,16 +536,18 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             if (kb == null) {
                 continue;
             }
-            List<String> chunks = chunkMapper.selectList(
+            List<ChunkSample> chunks = chunkMapper.selectList(
                     Wrappers.lambdaQuery(KnowledgeChunkDO.class)
                             .eq(KnowledgeChunkDO::getDocId, document.getId())
                             .eq(KnowledgeChunkDO::getEnabled, 1)
                             .orderByAsc(KnowledgeChunkDO::getChunkIndex)
             ).stream()
                     .limit(maxChunksPerDocument)
-                    .map(KnowledgeChunkDO::getContent)
-                    .filter(StrUtil::isNotBlank)
-                    .map(this::truncateSample)
+                    .filter(chunk -> StrUtil.isNotBlank(chunk.getContent()))
+                    .map(chunk -> new ChunkSample(
+                            chunk.getId(),
+                            chunk.getChunkIndex(),
+                            truncateSample(chunk.getContent())))
                     .toList();
             result.add(new ConfigBootstrapDocumentSample(
                     kb.getId(),
@@ -723,6 +727,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                 .termCandidateCount(run.getTermCandidateCount())
                 .intentCandidateCount(run.getIntentCandidateCount())
                 .summary(run.getSummary())
+                .sampleJson(run.getSampleJson())
                 .errorMessage(run.getErrorMessage())
                 .createTime(run.getCreateTime())
                 .updateTime(run.getUpdateTime())
