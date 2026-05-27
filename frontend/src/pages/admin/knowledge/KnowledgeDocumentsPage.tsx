@@ -38,9 +38,9 @@ import {
 import { getIngestionPipelines, type IngestionPipeline } from "@/services/ingestionService";
 import { getSystemSettings } from "@/services/settingsService";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { PageSizeSelect } from "@/components/admin/PageSizeSelect";
+import { PAGE_SIZE_OPTIONS } from "@/components/admin/pagination";
 import { getErrorMessage } from "@/utils/error";
-
-const PAGE_SIZE = 10;
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "pending" },
@@ -185,6 +185,7 @@ export function KnowledgeDocumentsPage() {
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
   const [pageData, setPageData] = useState<PageResult<KnowledgeDocument> | null>(null);
   const [current, setCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [keyword, setKeyword] = useState("");
@@ -300,7 +301,7 @@ export function KnowledgeDocumentsPage() {
     try {
       const data = await getDocumentsPage(kbId, {
         current: page,
-        size: PAGE_SIZE,
+        size: pageSize,
         status,
         keyword: keywordValue || undefined
       });
@@ -319,7 +320,7 @@ export function KnowledgeDocumentsPage() {
 
   useEffect(() => {
     loadDocuments();
-  }, [kbId, current, statusFilter, keyword]);
+  }, [kbId, current, pageSize, statusFilter, keyword]);
 
   useEffect(() => {
     if (detailTarget) {
@@ -802,6 +803,13 @@ export function KnowledgeDocumentsPage() {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
               <span>共 {pageData.total} 条</span>
               <div className="flex items-center gap-2">
+                <PageSizeSelect
+                  value={pageSize}
+                  onChange={(value) => {
+                    setPageSize(value);
+                    setCurrent(1);
+                  }}
+                />
                 <Button variant="outline" size="sm" onClick={() => setCurrent((prev) => Math.max(1, prev - 1))} disabled={pageData.current <= 1}>
                   上一页
                 </Button>

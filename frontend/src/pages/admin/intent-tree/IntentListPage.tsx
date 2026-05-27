@@ -46,7 +46,7 @@ import { getErrorMessage } from "@/utils/error";
 
 const ALL_VALUE = "__ALL__";
 const ROOT_VALUE = "__ROOT__";
-const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 const LEVEL_OPTIONS = [
   { value: 0, label: "DOMAIN" },

@@ -10,10 +10,10 @@ import { getErrorMessage } from "@/utils/error";
 import { RunsTable } from "@/pages/admin/traces/components/RunsTable";
 import { StatCard, type StatCardTone } from "@/pages/admin/traces/components/StatCard";
 import {
-  PAGE_SIZE,
   normalizeStatus,
   percentile,
 } from "@/pages/admin/traces/traceUtils";
+import { PAGE_SIZE_OPTIONS } from "@/components/admin/pagination";
 
 type DurationMetric = {
   value: string;
@@ -37,6 +37,7 @@ export function RagTracePage() {
   const [traceIdFilter, setTraceIdFilter] = useState("");
   const [queryTraceId, setQueryTraceId] = useState("");
   const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [pageData, setPageData] = useState<PageResult<RagTraceRun> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +49,7 @@ export function RagTracePage() {
     try {
       const result = await getRagTraceRuns({
         current,
-        size: PAGE_SIZE,
+        size: pageSize,
         traceId: nextTraceId.trim() || undefined
       });
       if (runsRequestRef.current !== requestId) return;
@@ -58,14 +59,15 @@ export function RagTracePage() {
       toast.error(getErrorMessage(error, "加载链路运行列表失败"));
       console.error(error);
     } finally {
-      if (runsRequestRef.current !== requestId) return;
-      setLoading(false);
+      if (runsRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadRuns();
-  }, [pageNo, queryTraceId]);
+  }, [pageNo, pageSize, queryTraceId]);
 
   const handleSearch = () => {
     setPageNo(1);
@@ -191,7 +193,12 @@ export function RagTracePage() {
           current={current}
           pages={pages}
           total={total}
+          pageSize={pageSize}
           onOpenRun={(traceId) => navigate(`/admin/traces/${encodeURIComponent(traceId)}`)}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPageNo(1);
+          }}
           onPrevPage={() => setPageNo((prev) => Math.max(1, prev - 1))}
           onNextPage={() => setPageNo((prev) => prev + 1)}
         />

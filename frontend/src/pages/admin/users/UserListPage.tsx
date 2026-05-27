@@ -11,12 +11,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageSizeSelect } from "@/components/admin/PageSizeSelect";
+import { PAGE_SIZE_OPTIONS } from "@/components/admin/pagination";
 import type { PageResult, UserItem, UserCreatePayload, UserUpdatePayload } from "@/services/userService";
 import { createUser, deleteUser, getUsersPage, updateUser } from "@/services/userService";
 import { getErrorMessage } from "@/utils/error";
 import { RelativeTime } from "@/components/RelativeTime";
-
-const PAGE_SIZE = 10;
 
 const roleOptions = [
   { value: "admin", label: "管理员" },
@@ -36,6 +36,7 @@ export function UserListPage() {
   const [searchInput, setSearchInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [dialogState, setDialogState] = useState<{ open: boolean; mode: "create" | "edit"; user: UserItem | null }>({
     open: false,
@@ -49,7 +50,7 @@ export function UserListPage() {
   const loadUsers = async (current = pageNo, name = keyword) => {
     try {
       setLoading(true);
-      const data = await getUsersPage(current, PAGE_SIZE, name || undefined);
+      const data = await getUsersPage(current, pageSize, name || undefined);
       setPageData(data);
     } catch (error) {
       toast.error(getErrorMessage(error, "加载用户列表失败"));
@@ -61,7 +62,7 @@ export function UserListPage() {
 
   useEffect(() => {
     loadUsers();
-  }, [pageNo, keyword]);
+  }, [pageNo, pageSize, keyword]);
 
   const handleSearch = () => {
     setPageNo(1);
@@ -343,6 +344,13 @@ export function UserListPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
           <span>共 {pageData.total} 条</span>
           <div className="flex items-center gap-2">
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(value) => {
+                setPageSize(value);
+                setPageNo(1);
+              }}
+            />
             <Button
               variant="outline"
               size="sm"

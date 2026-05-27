@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronRight, Eye } from "lucide-react";
 import type { RagTraceRun } from "@/services/ragTraceService";
+import { PageSizeSelect } from "@/components/admin/PageSizeSelect";
 import {
   formatDateTime,
   formatDuration,
@@ -17,7 +18,9 @@ interface RunsTableProps {
   current: number;
   pages: number;
   total: number;
+  pageSize: number;
   onOpenRun: (traceId: string) => void;
+  onPageSizeChange: (value: number) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
 }
@@ -28,7 +31,9 @@ export function RunsTable({
   current,
   pages,
   total,
+  pageSize,
   onOpenRun,
+  onPageSizeChange,
   onPrevPage,
   onNextPage
 }: RunsTableProps) {
@@ -121,6 +126,7 @@ export function RunsTable({
             第 {current} / {pages} 页，共 {total.toLocaleString("zh-CN")} 条
           </span>
           <div className="trace-list-pagination">
+            <PageSizeSelect value={pageSize} onChange={onPageSizeChange} />
             <Button
               className="trace-list-pagination-btn"
               variant="outline"
