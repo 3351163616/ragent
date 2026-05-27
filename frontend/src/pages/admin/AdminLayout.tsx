@@ -128,7 +128,7 @@ const menuGroups: MenuGroup[] = [
       },
       {
         path: "/admin/config-bootstrap",
-        label: "AI 初始化",
+        label: "系统初始化",
         icon: Sparkles
       },
       {
@@ -169,7 +169,7 @@ const breadcrumbMap: Record<string, string> = {
   traces: "链路追踪",
   "sample-questions": "示例问题",
   mappings: "关键词映射",
-  "config-bootstrap": "AI 初始化",
+  "config-bootstrap": "系统初始化",
   settings: "系统设置",
   users: "用户管理"
 };

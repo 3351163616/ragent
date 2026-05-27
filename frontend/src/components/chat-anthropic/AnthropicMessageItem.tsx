@@ -29,6 +29,7 @@ export const AnthropicMessageItem = React.memo(function AnthropicMessageItem({
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
   const isStreamingThis = message.status === "streaming";
+  const isContinuing = isStreamingThis && !isThinking && hasContent;
 
   const showFeedback =
     message.role === "assistant" &&
@@ -173,6 +174,16 @@ export const AnthropicMessageItem = React.memo(function AnthropicMessageItem({
           <div className="relative">
             <AnthropicMarkdown content={message.content} />
             {isStreamingThis ? <span className="anthropic-stream-cursor" /> : null}
+          </div>
+        ) : null}
+        {isContinuing ? (
+          <div className="flex items-center gap-1.5 text-anthropic-muted" aria-label="回复仍在生成">
+            <span className="ai-wait-dots" aria-hidden="true">
+              <span className="ai-wait-dot" />
+              <span className="ai-wait-dot" />
+              <span className="ai-wait-dot" />
+            </span>
+            <span className="anthropic-mono text-[11.5px]">继续生成中</span>
           </div>
         ) : null}
 

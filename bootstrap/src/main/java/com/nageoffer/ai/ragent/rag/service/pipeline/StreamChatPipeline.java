@@ -35,10 +35,10 @@ import com.nageoffer.ai.ragent.rag.core.prompt.RAGPromptService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrievalEngine;
 import com.nageoffer.ai.ragent.rag.core.rewrite.QueryRewriteService;
 import com.nageoffer.ai.ragent.rag.core.rewrite.RewriteResult;
+import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.dto.IntentGroup;
 import com.nageoffer.ai.ragent.rag.dto.RetrievalContext;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
-import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.service.handler.CitationAwareStreamCallback;
 import com.nageoffer.ai.ragent.rag.service.handler.StreamTaskManager;
 import lombok.RequiredArgsConstructor;
@@ -47,8 +47,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CHAT_SYSTEM_PROMPT_PATH;
+import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.OPENING_REPLY_PROMPT_PATH;
 
 /**
  * 流式对话流水线
@@ -62,6 +66,10 @@ import static com.nageoffer.ai.ragent.rag.constant.RAGConstant.CHAT_SYSTEM_PROMP
 @Service
 @RequiredArgsConstructor
 public class StreamChatPipeline {
+
+    private static final int OPENING_HISTORY_MAX_MESSAGES = 4;
+    private static final int OPENING_REPLY_MAX_TOKENS = 48;
+    private static final int OPENING_REPLY_MAX_WAIT_SECONDS = 8;
 
     private final SearchChannelProperties searchProperties;
     private final ConversationMemoryService memoryService;
@@ -80,8 +88,19 @@ public class StreamChatPipeline {
      */
     public void execute(StreamChatContext ctx) {
         loadMemory(ctx);
+        OpeningReplySession openingReply = startOpeningReply(ctx);
+        if (taskManager.isCancelled(ctx.getTaskId())) {
+            return;
+        }
         rewriteQuery(ctx);
+        if (taskManager.isCancelled(ctx.getTaskId())) {
+            return;
+        }
         resolveIntents(ctx);
+        finishOpeningReply(ctx, openingReply);
+        if (taskManager.isCancelled(ctx.getTaskId())) {
+            return;
+        }
 
         if (handleGuidance(ctx)) {
             return;
@@ -107,6 +126,79 @@ public class StreamChatPipeline {
                 ChatMessage.user(ctx.getQuestion())
         );
         ctx.setHistory(history);
+    }
+
+    private OpeningReplySession startOpeningReply(StreamChatContext ctx) {
+        if (taskManager.isCancelled(ctx.getTaskId())) {
+            return null;
+        }
+        OpeningReplyCallback callback = new OpeningReplyCallback(ctx.getCallback());
+        StreamCancellationHandle handle = null;
+        try {
+            ChatRequest request = ChatRequest.builder()
+                    .scene("opening-reply")
+                    .messages(buildOpeningReplyMessages(ctx))
+                    .temperature(0.3D)
+                    .topP(0.7D)
+                    .maxTokens(OPENING_REPLY_MAX_TOKENS)
+                    .thinking(false)
+                    .build();
+            handle = llmService.streamChat(request, callback, ctx.getModelId());
+            taskManager.bindHandle(ctx.getTaskId(), handle);
+            return new OpeningReplySession(callback, handle);
+        } catch (Exception ex) {
+            if (handle != null) {
+                handle.cancel();
+            }
+            log.warn("开场短回复启动失败，继续执行主 RAG 流程，conversationId={}", ctx.getConversationId(), ex);
+            return null;
+        }
+    }
+
+    private void finishOpeningReply(StreamChatContext ctx, OpeningReplySession session) {
+        if (session == null || taskManager.isCancelled(ctx.getTaskId())) {
+            return;
+        }
+        try {
+            boolean completed = session.callback().awaitWithin(OPENING_REPLY_MAX_WAIT_SECONDS, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("开场短回复超时，继续执行主 RAG 流程，conversationId={}", ctx.getConversationId());
+                session.cancel();
+                return;
+            }
+            if (session.callback().error() != null) {
+                log.warn("开场短回复失败，继续执行主 RAG 流程，conversationId={}",
+                        ctx.getConversationId(), session.callback().error());
+                return;
+            }
+            if (session.callback().hasContent() && !taskManager.isCancelled(ctx.getTaskId())) {
+                ctx.getCallback().onContent("\n\n");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            session.cancel();
+            log.warn("等待开场短回复完成时被中断，conversationId={}", ctx.getConversationId(), ex);
+        }
+    }
+
+    private List<ChatMessage> buildOpeningReplyMessages(StreamChatContext ctx) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(promptTemplateLoader.load(OPENING_REPLY_PROMPT_PATH)));
+        messages.addAll(recentOpeningHistory(ctx.getHistory()));
+        messages.add(ChatMessage.user(ctx.getQuestion()));
+        return messages;
+    }
+
+    private List<ChatMessage> recentOpeningHistory(List<ChatMessage> history) {
+        if (CollUtil.isEmpty(history)) {
+            return List.of();
+        }
+        int start = Math.max(0, history.size() - OPENING_HISTORY_MAX_MESSAGES);
+        return history.subList(start, history.size()).stream()
+                .filter(message -> message != null
+                        && message.getRole() != ChatMessage.Role.SYSTEM
+                        && StrUtil.isNotBlank(message.getContent()))
+                .toList();
     }
 
     private void rewriteQuery(StreamChatContext ctx) {
@@ -243,5 +335,68 @@ public class StreamChatPipeline {
                 .build();
 
         return llmService.streamChat(chatRequest, callback, modelId);
+    }
+
+    private record OpeningReplySession(OpeningReplyCallback callback, StreamCancellationHandle handle) {
+
+        private void cancel() {
+            if (handle != null) {
+                handle.cancel();
+            }
+        }
+    }
+
+    private static final class OpeningReplyCallback implements StreamCallback {
+
+        private final StreamCallback delegate;
+        private final CountDownLatch done = new CountDownLatch(1);
+        private final AtomicBoolean hasContent = new AtomicBoolean(false);
+        private final long startedAtNanos = System.nanoTime();
+        private volatile Throwable error;
+
+        private OpeningReplyCallback(StreamCallback delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void onContent(String content) {
+            if (StrUtil.isBlank(content)) {
+                return;
+            }
+            hasContent.set(true);
+            delegate.onContent(content);
+        }
+
+        @Override
+        public void onComplete() {
+            done.countDown();
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            this.error = error;
+            done.countDown();
+        }
+
+        private boolean awaitWithin(long timeout, TimeUnit unit) throws InterruptedException {
+            if (done.getCount() == 0) {
+                return true;
+            }
+            long timeoutNanos = unit.toNanos(timeout);
+            long elapsedNanos = System.nanoTime() - startedAtNanos;
+            long remainingNanos = timeoutNanos - elapsedNanos;
+            if (remainingNanos <= 0) {
+                return done.getCount() == 0;
+            }
+            return done.await(remainingNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private boolean hasContent() {
+            return hasContent.get();
+        }
+
+        private Throwable error() {
+            return error;
+        }
     }
 }

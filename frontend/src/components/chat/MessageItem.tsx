@@ -95,6 +95,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const hasThinking = Boolean(message.thinking && message.thinking.trim().length > 0);
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
+  const isContinuing = message.status === "streaming" && !isThinking && hasContent;
   const disableUserActions = isLoading || isStreaming;
 
   const handleCopyUserMessage = async () => {
@@ -193,6 +194,16 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             </div>
           ) : null}
           {hasContent ? <MarkdownRenderer content={message.content} /> : null}
+          {isContinuing ? (
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400" aria-label="回复仍在生成">
+              <span className="ai-wait-dots" aria-hidden="true">
+                <span className="ai-wait-dot" />
+                <span className="ai-wait-dot" />
+                <span className="ai-wait-dot" />
+              </span>
+              <span>继续生成中</span>
+            </div>
+          ) : null}
           <CitationList citations={message.citations} />
           {message.status === "error" ? (
             <p className="text-xs text-rose-500">生成已中断。</p>

@@ -104,6 +104,12 @@ public class RAGConstant {
     public static final String CONVERSATION_TITLE_PROMPT_PATH = "prompt/conversation-title.st";
 
     /**
+     * 开场短回复提示词模板路径
+     * 用于在查询改写、意图识别、检索前先给用户一条简短自然的首句反馈
+     */
+    public static final String OPENING_REPLY_PROMPT_PATH = "prompt/opening-reply.st";
+
+    /**
      * 默认会话标题
      * <p>
      * 新会话先使用该标题占位，异步标题生成完成后再回写真实标题
