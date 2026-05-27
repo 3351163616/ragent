@@ -158,41 +158,52 @@ function PublishResultLine({ result }: { result: ConfigBootstrapPublishResult | 
 
 function SampleDocumentsList({ items }: { items: ConfigBootstrapSampleDocument[] }) {
   if (items.length === 0) return null;
+  const totalChunks = items.reduce((sum, item) => sum + (item.chunks?.length || 0), 0);
   return (
-    <div className="rounded-lg border border-slate-200">
-      <div className="border-b border-slate-200 px-4 py-3 text-sm font-medium text-slate-700">
-        采样明细
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium text-slate-700">采样明细</div>
+        <div className="text-xs text-muted-foreground">
+          {items.length} 篇文档 / {totalChunks} 个 chunk
+        </div>
       </div>
-      <div className="max-h-[360px] divide-y divide-slate-100 overflow-auto">
+      <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
         {items.map((item, index) => {
           const chunks = item.chunks || [];
           return (
-            <div key={item.docId || `${item.docName}-${index}`} className="space-y-2 px-4 py-3">
-              <div className="min-w-0">
-                <div
-                  className="truncate text-sm font-medium text-slate-700"
-                  title={item.docName || ""}
-                >
-                  {item.docName || item.docId || "-"}
+            <div
+              key={item.docId || `${item.docName}-${index}`}
+              className="rounded-md border border-slate-200 bg-slate-50/60 p-3"
+            >
+              <div className="flex gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <FileText className="h-4 w-4" />
                 </div>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span>{item.kbName || item.kbId || "未知知识库"}</span>
-                  {item.collectionName ? <span>{item.collectionName}</span> : null}
-                  <span>{chunks.length} chunks</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-slate-800" title={item.docName || ""}>
+                    {item.docName || item.docId || "-"}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>{item.kbName || item.kbId || "未知知识库"}</span>
+                    {item.collectionName ? <span>{item.collectionName}</span> : null}
+                    <span>{chunks.length} 个 chunk</span>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="mt-3 grid gap-2">
                 {chunks.map((chunk, chunkIndex) => (
                   <div
                     key={chunk.chunkId || `${item.docId}-${chunkIndex}`}
-                    className="rounded-md bg-slate-50 px-3 py-2"
+                    className="rounded-r-md border-l-2 border-primary/40 bg-white px-3 py-2 shadow-sm"
                   >
-                    <div className="mb-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                      <span>chunk-{chunk.chunkIndex ?? chunkIndex}</span>
-                      {chunk.chunkId ? <span className="font-mono">{chunk.chunkId}</span> : null}
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <Badge variant="secondary" className="rounded px-1.5 py-0 font-mono">
+                        chunk-{chunk.chunkIndex ?? chunkIndex}
+                      </Badge>
+                      {chunk.chunkId ? <span className="truncate font-mono">{chunk.chunkId}</span> : null}
                     </div>
                     <div
-                      className="line-clamp-2 break-words text-xs leading-5 text-slate-600"
+                      className="line-clamp-3 break-words text-xs leading-5 text-slate-600"
                       title={chunk.content || ""}
                     >
                       {chunk.content || "-"}
