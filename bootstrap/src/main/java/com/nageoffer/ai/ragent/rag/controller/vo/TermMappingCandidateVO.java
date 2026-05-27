@@ -33,6 +33,7 @@ public class TermMappingCandidateVO {
     private String targetTerm;
     private Double confidence;
     private String riskLevel;
+    private String generationSource;
     private List<String> evidence;
     private String status;
     private String reviewComment;

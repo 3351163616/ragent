@@ -30,6 +30,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.infra.token.TokenCounterService;
 import com.nageoffer.ai.ragent.ingestion.service.IntentTreeService;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
 import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeChunkDO;
@@ -103,6 +104,8 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
     private static final int DEFAULT_MAX_DOCUMENTS = 100;
     private static final int DEFAULT_MAX_CHUNKS_PER_DOCUMENT = 3;
     private static final int MAX_SAMPLE_CONTENT_LENGTH = 1200;
+    private static final int LLM_OUTPUT_TOKEN_RESERVE = 4096;
+    private static final double LLM_INPUT_BUDGET_RATIO = 0.9D;
     private static final Type STRING_LIST_TYPE = new TypeToken<List<String>>() {
     }.getType();
 
@@ -115,6 +118,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
     private final QueryTermMappingMapper queryTermMappingMapper;
     private final IntentNodeMapper intentNodeMapper;
     private final LLMService llmService;
+    private final TokenCounterService tokenCounterService;
     private final InternalChatModelSelector internalChatModelSelector;
     private final PromptTemplateLoader promptTemplateLoader;
     private final ConfigBootstrapCandidateParser candidateParser;
@@ -134,7 +138,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
         int maxChunksPerDocument = normalizeLimit(
                 request.getMaxChunksPerDocument(),
                 DEFAULT_MAX_CHUNKS_PER_DOCUMENT,
-                10
+                50
         );
 
         ConfigBootstrapRunDO run = ConfigBootstrapRunDO.builder()
@@ -229,7 +233,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                 ? new ConfigBootstrapRunPageRequest()
                 : requestParam;
         long current = request.getCurrent() <= 0 ? 1 : request.getCurrent();
-        long size = request.getSize() <= 0 ? 10 : Math.min(request.getSize(), 50);
+        long size = request.getSize() <= 0 ? 10 : Math.min(request.getSize(), 100);
         Page<ConfigBootstrapRunDO> pageParam = new Page<>(current, size);
         IPage<ConfigBootstrapRunDO> result = runMapper.selectPage(
                 pageParam,
@@ -421,25 +425,58 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             return heuristic;
         }
         try {
-            String prompt = promptTemplateLoader.render(PROMPT_PATH, Map.of("documents", gson.toJson(samples)));
+            String modelId = internalChatModelSelector.modelId();
+            int maxContextTokens = internalChatModelSelector.maxContextTokens(modelId);
+            int maxInputTokens = maxInputTokens(maxContextTokens);
+            List<List<ConfigBootstrapDocumentSample>> batches = buildPromptBatches(samples, maxInputTokens);
+            ConfigBootstrapSuggestion llmSuggestion = ConfigBootstrapSuggestion.empty();
             log.info(
-                    "AI 初始化配置 LLM 候选生成开始: documents={}, chunks={}, promptChars={}",
+                    "AI 初始化配置 LLM 候选生成开始: modelId={}, maxContextTokens={}, maxInputTokens={}, batchCount={}, documents={}, chunks={}",
+                    modelId,
+                    maxContextTokens,
+                    maxInputTokens,
+                    batches.size(),
                     samples.size(),
-                    samples.stream().mapToInt(sample -> sample.chunks().size()).sum(),
-                    prompt.length()
+                    countChunks(samples)
             );
-            ChatRequest request = ChatRequest.builder()
-                    .scene("config-bootstrap")
-                    .messages(List.of(ChatMessage.user(prompt)))
-                    .temperature(0.1D)
-                    .topP(0.3D)
-                    .thinking(false)
-                    .build();
-            String raw = llmService.chat(request, internalChatModelSelector.modelId());
-            ConfigBootstrapSuggestion llmSuggestion = candidateParser.parse(raw);
+            for (int i = 0; i < batches.size(); i++) {
+                List<ConfigBootstrapDocumentSample> batch = batches.get(i);
+                String prompt = renderPrompt(batch);
+                int promptTokens = estimateTokens(prompt);
+                log.info(
+                        "AI 初始化配置 LLM 批次发送: modelId={}, batch={}/{}, documents={}, chunks={}, promptChars={}, promptTokens={}, maxInputTokens={}",
+                        modelId,
+                        i + 1,
+                        batches.size(),
+                        batch.size(),
+                        countChunks(batch),
+                        prompt.length(),
+                        promptTokens,
+                        maxInputTokens
+                );
+                ChatRequest request = ChatRequest.builder()
+                        .scene("config-bootstrap")
+                        .messages(List.of(ChatMessage.user(prompt)))
+                        .temperature(0.1D)
+                        .topP(0.3D)
+                        .thinking(false)
+                        .build();
+                String raw = llmService.chat(request, modelId);
+                ConfigBootstrapSuggestion batchSuggestion = candidateParser.parse(raw);
+                llmSuggestion = mergeSuggestions(batchSuggestion, llmSuggestion);
+                log.info(
+                        "AI 初始化配置 LLM 批次完成: batch={}/{}, llmTerms={}, llmIntents={}, mergedTerms={}, mergedIntents={}",
+                        i + 1,
+                        batches.size(),
+                        safeTerms(batchSuggestion).size(),
+                        safeIntents(batchSuggestion).size(),
+                        safeTerms(llmSuggestion).size(),
+                        safeIntents(llmSuggestion).size()
+                );
+            }
             ConfigBootstrapSuggestion merged = mergeSuggestions(llmSuggestion, heuristic);
             log.info(
-                    "AI 初始化配置 LLM 候选生成完成: llmTerms={}, llmIntents={}, mergedTerms={}, mergedIntents={}, elapsedMs={}",
+                "AI 初始化配置 LLM 候选生成完成: llmTerms={}, llmIntents={}, mergedTerms={}, mergedIntents={}, elapsedMs={}",
                     safeTerms(llmSuggestion).size(),
                     safeIntents(llmSuggestion).size(),
                     safeTerms(merged).size(),
@@ -457,6 +494,57 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             );
             return heuristic;
         }
+    }
+
+    private List<List<ConfigBootstrapDocumentSample>> buildPromptBatches(List<ConfigBootstrapDocumentSample> samples,
+                                                                         int maxInputTokens) {
+        List<List<ConfigBootstrapDocumentSample>> batches = new ArrayList<>();
+        List<ConfigBootstrapDocumentSample> current = new ArrayList<>();
+        for (ConfigBootstrapDocumentSample sample : samples) {
+            List<ConfigBootstrapDocumentSample> probe = new ArrayList<>(current);
+            probe.add(sample);
+            if (!current.isEmpty() && estimateTokens(renderPrompt(probe)) > maxInputTokens) {
+                batches.add(current);
+                current = new ArrayList<>();
+            }
+            current.add(sample);
+            if (current.size() == 1) {
+                int singleTokens = estimateTokens(renderPrompt(current));
+                if (singleTokens > maxInputTokens) {
+                    log.warn(
+                            "AI 初始化配置单文档样本超过模型输入预算，仍保留该文档发送: docId={}, docName={}, promptTokens={}, maxInputTokens={}",
+                            sample.docId(),
+                            sample.docName(),
+                            singleTokens,
+                            maxInputTokens
+                    );
+                    batches.add(current);
+                    current = new ArrayList<>();
+                }
+            }
+        }
+        if (!current.isEmpty()) {
+            batches.add(current);
+        }
+        return batches.isEmpty() ? List.of(samples) : batches;
+    }
+
+    private String renderPrompt(List<ConfigBootstrapDocumentSample> samples) {
+        return promptTemplateLoader.render(PROMPT_PATH, Map.of("documents", gson.toJson(samples)));
+    }
+
+    private int maxInputTokens(int maxContextTokens) {
+        int budget = (int) Math.floor(maxContextTokens * LLM_INPUT_BUDGET_RATIO) - LLM_OUTPUT_TOKEN_RESERVE;
+        return Math.max(1000, budget);
+    }
+
+    private int estimateTokens(String prompt) {
+        Integer tokens = tokenCounterService.countTokens(prompt);
+        return tokens == null ? 0 : tokens;
+    }
+
+    private int countChunks(List<ConfigBootstrapDocumentSample> samples) {
+        return samples.stream().mapToInt(sample -> sample.chunks().size()).sum();
     }
 
     private ConfigBootstrapSuggestion mergeSuggestions(ConfigBootstrapSuggestion primary,
@@ -514,6 +602,24 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
         }
         Map<String, KnowledgeBaseDO> kbById = knowledgeBases.stream()
                 .collect(Collectors.toMap(KnowledgeBaseDO::getId, kb -> kb, (left, right) -> left));
+        Map<String, Long> documentCountByKbId = knowledgeBases.stream()
+                .collect(Collectors.toMap(
+                        KnowledgeBaseDO::getId,
+                        kb -> documentMapper.selectCount(
+                                Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
+                                        .eq(KnowledgeDocumentDO::getKbId, kb.getId())
+                                        .eq(KnowledgeDocumentDO::getEnabled, 1)),
+                        (left, right) -> left));
+        Map<String, Long> chunkCountByKbId = knowledgeBases.stream()
+                .collect(Collectors.toMap(
+                        KnowledgeBaseDO::getId,
+                        kb -> chunkMapper.selectCount(
+                                Wrappers.lambdaQuery(KnowledgeChunkDO.class)
+                                        .eq(KnowledgeChunkDO::getKbId, kb.getId())
+                                        .eq(KnowledgeChunkDO::getEnabled, 1)
+                                        .isNotNull(KnowledgeChunkDO::getContent)
+                                        .ne(KnowledgeChunkDO::getContent, "")),
+                        (left, right) -> left));
 
         List<KnowledgeDocumentDO> documents = documentMapper.selectList(
                 Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
@@ -536,14 +642,16 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
             if (kb == null) {
                 continue;
             }
-            List<ChunkSample> chunks = chunkMapper.selectList(
+            List<KnowledgeChunkDO> enabledChunks = chunkMapper.selectList(
                     Wrappers.lambdaQuery(KnowledgeChunkDO.class)
                             .eq(KnowledgeChunkDO::getDocId, document.getId())
                             .eq(KnowledgeChunkDO::getEnabled, 1)
                             .orderByAsc(KnowledgeChunkDO::getChunkIndex)
             ).stream()
-                    .limit(maxChunksPerDocument)
                     .filter(chunk -> StrUtil.isNotBlank(chunk.getContent()))
+                    .toList();
+            List<ChunkSample> chunks = enabledChunks.stream()
+                    .limit(maxChunksPerDocument)
                     .map(chunk -> new ChunkSample(
                             chunk.getId(),
                             chunk.getChunkIndex(),
@@ -553,8 +661,12 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     kb.getId(),
                     kb.getName(),
                     kb.getCollectionName(),
+                    documentCountByKbId.get(kb.getId()),
+                    chunkCountByKbId.get(kb.getId()),
                     document.getId(),
                     document.getDocName(),
+                    (long) enabledChunks.size(),
+                    maxChunksPerDocument,
                     chunks
             ));
         }
@@ -582,6 +694,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     .targetTerm(suggestion.targetTerm())
                     .confidence(suggestion.confidence())
                     .riskLevel(normalizeRiskLevel(suggestion.riskLevel()))
+                    .generationSource(normalizeGenerationSource(suggestion.generationSource()))
                     .evidenceJson(gson.toJson(suggestion.evidence()))
                     .status(STATUS_PENDING)
                     .createBy(UserContext.getUsername())
@@ -617,6 +730,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                     .sortOrder(suggestion.sortOrder() == null ? sort : suggestion.sortOrder())
                     .confidence(suggestion.confidence())
                     .riskLevel(normalizeRiskLevel(suggestion.riskLevel()))
+                    .generationSource(normalizeGenerationSource(suggestion.generationSource()))
                     .evidenceJson(gson.toJson(suggestion.evidence()))
                     .status(STATUS_PENDING)
                     .createBy(UserContext.getUsername())
@@ -744,6 +858,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                 .targetTerm(candidate.getTargetTerm())
                 .confidence(candidate.getConfidence())
                 .riskLevel(candidate.getRiskLevel())
+                .generationSource(candidate.getGenerationSource())
                 .evidence(parseStringList(candidate.getEvidenceJson()))
                 .status(candidate.getStatus())
                 .reviewComment(candidate.getReviewComment())
@@ -770,6 +885,7 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
                 .sortOrder(candidate.getSortOrder())
                 .confidence(candidate.getConfidence())
                 .riskLevel(candidate.getRiskLevel())
+                .generationSource(candidate.getGenerationSource())
                 .evidence(parseStringList(candidate.getEvidenceJson()))
                 .status(candidate.getStatus())
                 .reviewComment(candidate.getReviewComment())
@@ -829,6 +945,17 @@ public class ConfigBootstrapServiceImpl implements ConfigBootstrapService {
         return switch (normalized) {
             case "LOW", "MEDIUM", "HIGH" -> normalized;
             default -> "MEDIUM";
+        };
+    }
+
+    private String normalizeGenerationSource(String generationSource) {
+        String normalized = StrUtil.blankToDefault(
+                generationSource,
+                ConfigBootstrapSuggestion.SOURCE_UNKNOWN
+        ).trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case ConfigBootstrapSuggestion.SOURCE_RULE, ConfigBootstrapSuggestion.SOURCE_LLM -> normalized;
+            default -> ConfigBootstrapSuggestion.SOURCE_UNKNOWN;
         };
     }
 

@@ -71,7 +71,8 @@ public class ConfigBootstrapCandidateParser {
                     targetTerm.trim(),
                     readConfidence(object),
                     readRiskLevel(object),
-                    readStringList(object, "evidence")
+                    readStringList(object, "evidence"),
+                    ConfigBootstrapSuggestion.SOURCE_LLM
             ));
         }
         return result;
@@ -105,7 +106,8 @@ public class ConfigBootstrapCandidateParser {
                     readInteger(object, "sortOrder", "sort_order"),
                     readConfidence(object),
                     readRiskLevel(object),
-                    readStringList(object, "evidence")
+                    readStringList(object, "evidence"),
+                    ConfigBootstrapSuggestion.SOURCE_LLM
             ));
         }
         return result;

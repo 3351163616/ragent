@@ -23,8 +23,12 @@ public record ConfigBootstrapDocumentSample(
         String kbId,
         String kbName,
         String collectionName,
+        Long kbDocumentCount,
+        Long kbChunkCount,
         String docId,
         String docName,
+        Long docChunkCount,
+        Integer chunkLimit,
         List<ChunkSample> chunks
 ) {
 

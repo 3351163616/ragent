@@ -33,6 +33,7 @@ export interface TermMappingCandidate {
   targetTerm: string;
   confidence?: number | null;
   riskLevel?: string | null;
+  generationSource?: string | null;
   evidence?: string[];
   status: string;
   reviewComment?: string | null;
@@ -57,6 +58,7 @@ export interface IntentNodeCandidate {
   sortOrder?: number | null;
   confidence?: number | null;
   riskLevel?: string | null;
+  generationSource?: string | null;
   evidence?: string[];
   status: string;
   reviewComment?: string | null;
@@ -75,8 +77,12 @@ export interface ConfigBootstrapSampleDocument {
   kbId?: string | null;
   kbName?: string | null;
   collectionName?: string | null;
+  kbDocumentCount?: number | null;
+  kbChunkCount?: number | null;
   docId?: string | null;
   docName?: string | null;
+  docChunkCount?: number | null;
+  chunkLimit?: number | null;
   chunks?: ConfigBootstrapSampleChunk[];
 }
 
@@ -113,9 +119,12 @@ export async function getConfigBootstrapRuns(
   size = 10,
   status?: string
 ): Promise<PageResult<ConfigBootstrapRun>> {
-  return api.get<PageResult<ConfigBootstrapRun>, PageResult<ConfigBootstrapRun>>("/config-bootstrap/runs", {
-    params: { current, size, status: status || undefined }
-  });
+  return api.get<PageResult<ConfigBootstrapRun>, PageResult<ConfigBootstrapRun>>(
+    "/config-bootstrap/runs",
+    {
+      params: { current, size, status: status || undefined }
+    }
+  );
 }
 
 export async function createConfigBootstrapRun(
@@ -154,7 +163,9 @@ export async function publishConfigBootstrapRun(
   );
 }
 
-export async function rollbackConfigBootstrapRun(runId: string): Promise<ConfigBootstrapPublishResult> {
+export async function rollbackConfigBootstrapRun(
+  runId: string
+): Promise<ConfigBootstrapPublishResult> {
   return api.post<ConfigBootstrapPublishResult, ConfigBootstrapPublishResult>(
     `/config-bootstrap/runs/${runId}/rollback`
   );

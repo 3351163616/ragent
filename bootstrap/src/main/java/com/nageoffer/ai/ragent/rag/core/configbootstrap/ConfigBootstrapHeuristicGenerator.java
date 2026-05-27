@@ -23,6 +23,7 @@ import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestio
 import com.nageoffer.ai.ragent.rag.core.configbootstrap.ConfigBootstrapSuggestion.TermMappingSuggestion;
 import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.rag.enums.IntentLevel;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -36,12 +37,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
+@Slf4j
 public class ConfigBootstrapHeuristicGenerator {
 
     private static final Pattern PAREN_ALIAS = Pattern.compile("([\\p{IsHan}A-Za-z0-9_\\-]{2,24})[（(]([^）)]{2,80})[）)]");
     private static final Pattern SLASH_ALIAS = Pattern.compile("([\\p{IsHan}A-Za-z0-9_\\-]{2,24})[/／]([\\p{IsHan}A-Za-z0-9_\\-]{2,24})");
     private static final int MAX_INTENT_CANDIDATES = 60;
-    private static final int MAX_TERM_CANDIDATES = 120;
+    private static final int MAX_TERM_CANDIDATES = 500;
 
     public ConfigBootstrapSuggestion generate(List<ConfigBootstrapDocumentSample> samples) {
         if (samples == null || samples.isEmpty()) {
@@ -82,7 +84,8 @@ public class ConfigBootstrapHeuristicGenerator {
                     sort++,
                     0.72D,
                     "MEDIUM",
-                    List.of("知识库名称：" + sample.kbName())
+                    List.of("知识库名称：" + sample.kbName()),
+                    ConfigBootstrapSuggestion.SOURCE_RULE
             ));
             if (result.size() >= MAX_INTENT_CANDIDATES) {
                 return result;
@@ -108,7 +111,8 @@ public class ConfigBootstrapHeuristicGenerator {
                     sort++,
                     0.64D,
                     "MEDIUM",
-                    List.of("文档名称：" + sample.docName())
+                    List.of("文档名称：" + sample.docName()),
+                    ConfigBootstrapSuggestion.SOURCE_RULE
             ));
             if (result.size() >= MAX_INTENT_CANDIDATES) {
                 break;
@@ -129,6 +133,13 @@ public class ConfigBootstrapHeuristicGenerator {
                 collectParenthesizedAliases(text, dedup, sample.docName());
                 collectSlashAliases(text, dedup, sample.docName());
                 if (dedup.size() >= MAX_TERM_CANDIDATES) {
+                    log.info(
+                            "AI 初始化配置规则术语候选达到上限: limit={}, current={}, docId={}, docName={}",
+                            MAX_TERM_CANDIDATES,
+                            dedup.size(),
+                            sample.docId(),
+                            sample.docName()
+                    );
                     return new ArrayList<>(dedup.values());
                 }
             }
@@ -196,7 +207,8 @@ public class ConfigBootstrapHeuristicGenerator {
                 target,
                 confidence,
                 "MEDIUM",
-                List.of("文档《" + docName + "》中出现同义/别名表达")
+                List.of("文档《" + docName + "》中出现同义/别名表达"),
+                ConfigBootstrapSuggestion.SOURCE_RULE
         ));
     }
 

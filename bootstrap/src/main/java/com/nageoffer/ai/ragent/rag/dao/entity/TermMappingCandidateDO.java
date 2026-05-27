@@ -44,6 +44,7 @@ public class TermMappingCandidateDO {
     private String targetTerm;
     private Double confidence;
     private String riskLevel;
+    private String generationSource;
     private String evidenceJson;
     private String status;
     private String reviewComment;

@@ -24,6 +24,10 @@ public record ConfigBootstrapSuggestion(
         List<IntentNodeSuggestion> intentNodes
 ) {
 
+    public static final String SOURCE_RULE = "RULE";
+    public static final String SOURCE_LLM = "LLM";
+    public static final String SOURCE_UNKNOWN = "UNKNOWN";
+
     public static ConfigBootstrapSuggestion empty() {
         return new ConfigBootstrapSuggestion(List.of(), List.of());
     }
@@ -33,7 +37,8 @@ public record ConfigBootstrapSuggestion(
             String targetTerm,
             double confidence,
             String riskLevel,
-            List<String> evidence
+            List<String> evidence,
+            String generationSource
     ) {
     }
 
@@ -51,7 +56,8 @@ public record ConfigBootstrapSuggestion(
             Integer sortOrder,
             double confidence,
             String riskLevel,
-            List<String> evidence
+            List<String> evidence,
+            String generationSource
     ) {
     }
 }

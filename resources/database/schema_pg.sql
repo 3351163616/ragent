@@ -318,6 +318,7 @@ CREATE TABLE t_term_mapping_candidate (
     target_term    VARCHAR(128)  NOT NULL,
     confidence     DOUBLE PRECISION,
     risk_level     VARCHAR(16)   NOT NULL DEFAULT 'MEDIUM',
+    generation_source VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN',
     evidence_json  TEXT,
     status         VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
     review_comment TEXT,
@@ -333,6 +334,7 @@ CREATE TABLE t_term_mapping_candidate (
 CREATE INDEX idx_term_mapping_candidate_run ON t_term_mapping_candidate (run_id);
 CREATE INDEX idx_term_mapping_candidate_status ON t_term_mapping_candidate (status);
 COMMENT ON TABLE t_term_mapping_candidate IS 'AI辅助初始化术语映射候选表';
+COMMENT ON COLUMN t_term_mapping_candidate.generation_source IS '候选生成来源：RULE/LLM/UNKNOWN';
 
 CREATE TABLE t_intent_node_candidate (
     id              VARCHAR(20)   NOT NULL PRIMARY KEY,
@@ -350,6 +352,7 @@ CREATE TABLE t_intent_node_candidate (
     sort_order      INTEGER       NOT NULL DEFAULT 0,
     confidence      DOUBLE PRECISION,
     risk_level      VARCHAR(16)   NOT NULL DEFAULT 'MEDIUM',
+    generation_source VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN',
     evidence_json   TEXT,
     status          VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
     review_comment  TEXT,
@@ -365,6 +368,7 @@ CREATE TABLE t_intent_node_candidate (
 CREATE INDEX idx_intent_node_candidate_run ON t_intent_node_candidate (run_id);
 CREATE INDEX idx_intent_node_candidate_status ON t_intent_node_candidate (status);
 COMMENT ON TABLE t_intent_node_candidate IS 'AI辅助初始化意图节点候选表';
+COMMENT ON COLUMN t_intent_node_candidate.generation_source IS '候选生成来源：RULE/LLM/UNKNOWN';
 
 CREATE TABLE t_rag_trace_run (
     id              VARCHAR(20)           NOT NULL PRIMARY KEY,
