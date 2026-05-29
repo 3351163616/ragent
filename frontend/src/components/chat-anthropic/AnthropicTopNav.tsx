@@ -14,6 +14,11 @@ export function AnthropicTopNav({ onToggleSidebar, isMobile }: AnthropicTopNavPr
   const selectedModelId = useChatStore((s) => s.selectedModelId);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const statusLabel = isStreaming
+    ? selectedModelId
+      ? `${selectedModelId} · streaming`
+      : "streaming"
+    : selectedModelId;
 
   const dotColor = isStreaming ? "#e8a55a" : "#5db872";
   const dotShadow = isStreaming
@@ -50,16 +55,17 @@ export function AnthropicTopNav({ onToggleSidebar, isMobile }: AnthropicTopNavPr
       ) : null}
 
       <div className="ml-auto flex items-center gap-4">
-        <span className="flex items-center gap-2 text-[12.5px] font-medium text-anthropic-muted">
-          <span
-            className="h-[7px] w-[7px] rounded-full"
-            style={{ backgroundColor: dotColor, boxShadow: dotShadow }}
-          />
-          <span className="anthropic-mono hidden text-[11.5px] text-anthropic-muted sm:inline">
-            {selectedModelId || "claude-sonnet-4-6"} ·{" "}
-            {isStreaming ? "streaming" : "routing healthy"}
+        {statusLabel ? (
+          <span className="flex items-center gap-2 text-[12.5px] font-medium text-anthropic-muted">
+            <span
+              className="h-[7px] w-[7px] rounded-full"
+              style={{ backgroundColor: dotColor, boxShadow: dotShadow }}
+            />
+            <span className="anthropic-mono hidden text-[11.5px] text-anthropic-muted sm:inline">
+              {statusLabel}
+            </span>
           </span>
-        </span>
+        ) : null}
 
         {user ? (
           <button

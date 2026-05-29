@@ -39,6 +39,13 @@ export function AnthropicInspector({ currentMessage, isStreaming }: AnthropicIns
     const done: TimelineStep["state"] = "done";
     const active: TimelineStep["state"] = isStreaming ? "active" : "done";
     const pending: TimelineStep["state"] = "pending";
+    const generationChips: TimelineStep["chips"] = [];
+    if (selectedModelId) {
+      generationChips.push({ label: `model: ${selectedModelId}`, tone: "default" });
+    }
+    if (isStreaming) {
+      generationChips.push({ label: "streaming", tone: "coral" });
+    }
 
     return [
       {
@@ -85,10 +92,7 @@ export function AnthropicInspector({ currentMessage, isStreaming }: AnthropicIns
         name: "流式生成",
         ms: isStreaming ? "streaming…" : "609 ms",
         body: "answer-chat-mcp-kb-mixed.st · prompt scene 自动路由。",
-        chips: [
-          { label: `model: ${selectedModelId || "sonnet-4-6"}`, tone: "default" },
-          { label: "routing healthy", tone: "teal" }
-        ],
+        chips: generationChips,
         state: isStreaming ? active : done
       },
       {
@@ -184,43 +188,19 @@ export function AnthropicInspector({ currentMessage, isStreaming }: AnthropicIns
           </span>
           <span className="text-[11px] font-medium text-anthropic-coral">view all</span>
         </div>
-        {[
-          { name: selectedModelId || "claude-sonnet-4-6", latency: "162 ms", state: "closed" },
-          { name: "bce-rerank-v2", latency: "94 ms", state: "closed" },
-          { name: "qwen3-embedding-1.5b", latency: "probe…", state: "half" },
-          { name: "moyu-fallback-gpt4", latency: "— ms", state: "open" }
-        ].map((row, idx) => (
-          <div
-            key={row.name}
-            className={cn(
-              "flex items-center gap-2.5 py-1.5 text-[13px]",
-              idx !== 0 && "border-t border-anthropic-hairline-soft pt-2.5"
-            )}
-          >
-            <span
-              className={cn(
-                "h-2 w-2 flex-none rounded-full",
-                row.state === "closed" && "bg-anthropic-success",
-                row.state === "half" && "bg-anthropic-amber",
-                row.state === "open" && "bg-anthropic-error"
-              )}
-            />
-            <span className="flex-1 font-medium text-anthropic-ink">{row.name}</span>
-            <span className="anthropic-mono text-[11.5px] text-anthropic-muted">
-              {row.latency}
-            </span>
-            <span
-              className={cn(
-                "anthropic-mono rounded-anthropic-xs px-1.5 py-[1px] text-[10.5px] uppercase tracking-[1.2px]",
-                row.state === "closed" && "bg-[#5db872]/16 text-[#2d7a45]",
-                row.state === "half" && "bg-[#d4a017]/16 text-[#946a08]",
-                row.state === "open" && "bg-[#c64545]/16 text-[#8d2929]"
-              )}
-            >
-              {row.state}
+        {selectedModelId ? (
+          <div className="flex items-center gap-2.5 py-1.5 text-[13px]">
+            <span className="h-2 w-2 flex-none rounded-full bg-anthropic-coral" />
+            <span className="flex-1 font-medium text-anthropic-ink">{selectedModelId}</span>
+            <span className="anthropic-mono rounded-anthropic-xs bg-anthropic-surface-card px-1.5 py-[1px] text-[10.5px] uppercase tracking-[1.2px] text-anthropic-muted">
+              selected
             </span>
           </div>
-        ))}
+        ) : (
+          <p className="text-[12.5px] leading-[1.5] text-anthropic-muted">
+            未选择固定模型，本次请求将由后端路由策略决定。
+          </p>
+        )}
       </div>
 
       {/* Memory window card */}

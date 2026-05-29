@@ -65,7 +65,7 @@ export function AnthropicChatView() {
             onClick={() => setSidebarOpen(false)}
           />
           <div className="fixed left-0 top-0 z-50 h-full w-[280px] border-r border-anthropic-hairline-soft bg-anthropic-canvas shadow-anthropic-card">
-            <div className="pt-[64px]">
+            <div className="h-full pt-[64px]">
               <AnthropicSidebar onNavigate={() => setSidebarOpen(false)} />
             </div>
           </div>

@@ -216,7 +216,10 @@ public class StreamChatEventHandler implements StreamCallback, CitationAwareStre
         if (taskManager.isCancelled(taskId)) {
             return;
         }
-        if (StrUtil.isBlank(chunk)) {
+        if (chunk == null || chunk.isEmpty()) {
+            return;
+        }
+        if (StrUtil.isBlank(chunk) && answer.isEmpty()) {
             return;
         }
         if (thinkingStartMs > 0 && thinkingDurationSeconds == 0) {

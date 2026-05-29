@@ -116,14 +116,8 @@ export function AnthropicSidebar({ onNavigate }: AnthropicSidebarProps) {
     cancelRename();
   };
 
-  const knowledgeBases = [
-    { name: "rag-core", count: 1284, tone: "#cc785c" },
-    { name: "kb-finance", count: 412, tone: "#5db8a6" },
-    { name: "kb-engineering", count: 3902, tone: "#e8a55a" }
-  ];
-
   return (
-    <aside className="flex h-full flex-col gap-5 overflow-y-auto px-4 py-5 anthropic-scroll">
+    <aside className="flex h-full min-h-0 flex-col gap-5 overflow-hidden px-4 py-5">
       <button
         type="button"
         onClick={() => {
@@ -152,7 +146,7 @@ export function AnthropicSidebar({ onNavigate }: AnthropicSidebarProps) {
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1">
+      <div className="anthropic-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {sessions.length === 0 && (!sessionsLoaded || isLoading) ? (
           <div className="flex h-32 items-center justify-center text-anthropic-muted">
             <Loading label="加载会话中" />
@@ -268,52 +262,33 @@ export function AnthropicSidebar({ onNavigate }: AnthropicSidebarProps) {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5 border-t border-anthropic-hairline-soft pt-4">
-        <div className="px-2.5 anthropic-mono text-[10.5px] uppercase tracking-[1.5px] text-anthropic-muted-soft">
-          Knowledge Bases
-        </div>
-        {knowledgeBases.map((kb) => (
-          <div
-            key={kb.name}
-            className="flex items-center gap-2.5 rounded-anthropic-md px-3 py-1.5 text-[13px] text-anthropic-body transition-colors hover:bg-anthropic-surface-soft"
+      <div className="flex flex-none flex-col gap-4 border-t border-anthropic-hairline-soft pt-4">
+        {user?.role === "admin" ? (
+          <button
+            type="button"
+            onClick={() => window.open("/admin", "_blank")}
+            className="flex items-center gap-2.5 rounded-anthropic-md border border-anthropic-hairline bg-anthropic-canvas px-3.5 py-2.5 text-[13px] font-medium text-anthropic-ink transition-colors hover:bg-anthropic-surface-card"
           >
-            <span
-              className="h-2 w-2 flex-none rounded-full"
-              style={{ backgroundColor: kb.tone }}
-            />
-            <span className="flex-1">{kb.name}</span>
-            <span className="anthropic-mono text-[10.5px] text-anthropic-muted-soft">
-              {kb.count}
+            <Settings className="h-4 w-4 text-anthropic-coral" />
+            管理后台
+          </button>
+        ) : null}
+
+        <div className="flex items-center gap-2.5 rounded-anthropic-md border border-anthropic-hairline bg-anthropic-canvas p-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#cc785c] to-[#a9583e] text-[13px] font-semibold text-white">
+            {(user?.username || user?.userId || "U").slice(0, 1).toUpperCase()}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col leading-tight">
+            <span className="truncate text-[13px] font-medium text-anthropic-ink">
+              {(() => {
+                const fallback = user?.username || user?.userId || "用户";
+                return /^\d+$/.test(fallback) ? "用户" : fallback;
+              })()}
+            </span>
+            <span className="text-[11px] text-anthropic-muted">
+              {user?.role === "admin" ? "Admin" : "Member"}
             </span>
           </div>
-        ))}
-      </div>
-
-      {user?.role === "admin" ? (
-        <button
-          type="button"
-          onClick={() => window.open("/admin", "_blank")}
-          className="flex items-center gap-2.5 rounded-anthropic-md border border-anthropic-hairline bg-anthropic-canvas px-3.5 py-2.5 text-[13px] font-medium text-anthropic-ink transition-colors hover:bg-anthropic-surface-card"
-        >
-          <Settings className="h-4 w-4 text-anthropic-coral" />
-          管理后台
-        </button>
-      ) : null}
-
-      <div className="flex items-center gap-2.5 rounded-anthropic-md border border-anthropic-hairline bg-anthropic-canvas p-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#cc785c] to-[#a9583e] text-[13px] font-semibold text-white">
-          {(user?.username || user?.userId || "U").slice(0, 1).toUpperCase()}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span className="truncate text-[13px] font-medium text-anthropic-ink">
-            {(() => {
-              const fallback = user?.username || user?.userId || "用户";
-              return /^\d+$/.test(fallback) ? "用户" : fallback;
-            })()}
-          </span>
-          <span className="text-[11px] text-anthropic-muted">
-            {user?.role === "admin" ? "Admin" : "Member"}
-          </span>
         </div>
       </div>
 
