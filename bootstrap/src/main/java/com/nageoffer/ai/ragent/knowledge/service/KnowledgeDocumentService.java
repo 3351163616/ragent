@@ -52,12 +52,28 @@ public interface KnowledgeDocumentService {
     void startChunk(String docId);
 
     /**
+     * 重新处理文档，可为本次任务指定 PDF OCR 策略。
+     *
+     * @param docId       文档 ID
+     * @param ocrStrategy PDF OCR 策略：NO_OCR / AUTO / OCR_ONLY
+     */
+    void reprocess(String docId, String ocrStrategy);
+
+    /**
      * 执行文档分块（由 MQ 消费者调用）
      * 获取分布式锁 → 清理历史分块和向量 → 执行完整分块流程
      *
      * @param docId 文档 ID
      */
     void executeChunk(String docId);
+
+    /**
+     * 执行文档分块（由 MQ 消费者调用），支持一次性覆盖 PDF OCR 策略。
+     *
+     * @param docId       文档 ID
+     * @param ocrStrategy PDF OCR 策略
+     */
+    void executeChunk(String docId, String ocrStrategy);
 
     /**
      * 删除文档

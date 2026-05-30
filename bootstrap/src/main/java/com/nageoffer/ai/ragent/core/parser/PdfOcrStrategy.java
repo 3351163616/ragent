@@ -15,47 +15,48 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.knowledge.enums;
+package com.nageoffer.ai.ragent.core.parser;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 
-/**
- * 文档处理状态枚举
- *
- * <p>表示文档在处理过程中可能处于的各种状态
- */
+import java.util.Locale;
+
 @Getter
 @RequiredArgsConstructor
-public enum DocumentStatus {
+public enum PdfOcrStrategy {
 
     /**
-     * 文档待处理
+     * Only extract the PDF text layer.
      */
-    PENDING("pending"),
+    NO_OCR("NO_OCR"),
 
     /**
-     * 文档处理中
+     * Extract text layer first, then fall back to OCR when quality checks fail.
      */
-    RUNNING("running"),
+    AUTO("AUTO"),
 
     /**
-     * 文档处理失败
+     * Ignore the PDF text layer and use OCR.
      */
-    FAILED("failed"),
+    OCR_ONLY("OCR_ONLY");
 
-    /**
-     * 文档处理成功
-     */
-    SUCCESS("success"),
-
-    /**
-     * 文档文本层疑似损坏，需 OCR 重处理
-     */
-    TEXT_CORRUPTED("text_corrupted");
-
-    /**
-     * 状态码
-     */
     private final String code;
+
+    public static PdfOcrStrategy normalize(Object value, PdfOcrStrategy defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        String raw = value.toString();
+        if (!StringUtils.hasText(raw)) {
+            return defaultValue;
+        }
+        return switch (raw.trim().replace('-', '_').toUpperCase(Locale.ROOT)) {
+            case "AUTO" -> AUTO;
+            case "OCR", "OCR_ONLY" -> OCR_ONLY;
+            case "NOOCR", "NO_OCR", "TEXT", "TEXT_ONLY" -> NO_OCR;
+            default -> defaultValue;
+        };
+    }
 }

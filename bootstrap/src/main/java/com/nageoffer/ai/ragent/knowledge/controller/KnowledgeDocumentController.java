@@ -20,6 +20,7 @@ package com.nageoffer.ai.ragent.knowledge.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentPageRequest;
+import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentReprocessRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUploadRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.request.KnowledgeDocumentUpdateRequest;
 import com.nageoffer.ai.ragent.knowledge.controller.vo.KnowledgeDocumentVO;
@@ -88,6 +89,16 @@ public class KnowledgeDocumentController {
     @PostMapping("/knowledge-base/docs/{doc-id}/chunk")
     public Result<Void> startChunk(@PathVariable(value = "doc-id") String docId) {
         documentService.startChunk(docId);
+        return Results.success();
+    }
+
+    /**
+     * 重新处理文档，可指定 OCR 策略（常用于 text_corrupted 文档的 OCR_ONLY 重处理）
+     */
+    @PostMapping("/knowledge-base/docs/{doc-id}/reprocess")
+    public Result<Void> reprocess(@PathVariable(value = "doc-id") String docId,
+                                  @RequestBody(required = false) KnowledgeDocumentReprocessRequest requestParam) {
+        documentService.reprocess(docId, requestParam == null ? null : requestParam.getOcrStrategy());
         return Results.success();
     }
 

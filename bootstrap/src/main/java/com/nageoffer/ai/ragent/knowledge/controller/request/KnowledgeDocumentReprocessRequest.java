@@ -15,45 +15,15 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.knowledge.mq.event;
+package com.nageoffer.ai.ragent.knowledge.controller.request;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
-import java.io.Serial;
-import java.io.Serializable;
-
-/**
- * 文档分块任务事件
- */
 @Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class KnowledgeDocumentChunkEvent implements Serializable {
-
-    @Serial
-    private static final long serialVersionUID = 1L;
+public class KnowledgeDocumentReprocessRequest {
 
     /**
-     * 文档 ID
-     */
-    private String docId;
-
-    /**
-     * 知识库 ID
-     */
-    private String kbId;
-
-    /**
-     * 操作人
-     */
-    private String operator;
-
-    /**
-     * 本次任务覆盖的 PDF OCR 策略，可为空
+     * PDF OCR strategy for this reprocess request: NO_OCR / AUTO / OCR_ONLY.
      */
     private String ocrStrategy;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Check, FileUp, Image, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X, Eye, MoreHorizontal, FileText, Link as LinkIcon } from "lucide-react";
+import { AlertTriangle, Check, FileUp, Image, PlayCircle, RefreshCw, ScanText, Trash2, Pencil, FileBarChart, X, Eye, MoreHorizontal, FileText, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -30,6 +30,7 @@ import {
   getDocument,
   updateDocument,
   startDocumentChunk,
+  reprocessDocument,
   uploadDocument,
   getChunkStrategies,
   getChunkLogsPage,
@@ -46,7 +47,8 @@ const STATUS_OPTIONS = [
   { value: "pending", label: "pending" },
   { value: "running", label: "running" },
   { value: "failed", label: "failed" },
-  { value: "success", label: "success" }
+  { value: "success", label: "success" },
+  { value: "text_corrupted", label: "text_corrupted" }
 ];
 
 const SOURCE_OPTIONS = [
@@ -79,9 +81,20 @@ const statusDotClass = (status?: string | null) => {
   const normalized = status.toLowerCase();
   if (normalized === "success") return "bg-emerald-500";
   if (normalized === "failed") return "bg-red-500";
+  if (normalized === "text_corrupted") return "bg-orange-500";
   if (normalized === "running") return "bg-amber-500";
   if (normalized === "pending") return "bg-slate-400";
   return "bg-muted-foreground/40";
+};
+
+const formatDocumentStatus = (status?: string | null) => {
+  const normalized = status?.toLowerCase();
+  if (normalized === "success") return "success";
+  if (normalized === "failed") return "failed";
+  if (normalized === "running") return "running";
+  if (normalized === "pending") return "pending";
+  if (normalized === "text_corrupted") return "文本损坏";
+  return status || "-";
 };
 
 const formatSize = (size?: number | null) => {
@@ -407,6 +420,17 @@ export function KnowledgeDocumentsPage() {
     }
   };
 
+  const handleReprocessWithOCR = async (doc: KnowledgeDocument) => {
+    try {
+      await reprocessDocument(String(doc.id), { ocrStrategy: "OCR_ONLY" });
+      toast.success("已开始 OCR 重处理");
+      await loadDocuments(current, statusFilter, keyword);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "OCR 重处理失败"));
+      console.error(error);
+    }
+  };
+
   const handleToggleEnabled = async (doc: KnowledgeDocument) => {
     const enabled = Boolean(doc.enabled);
     try {
@@ -515,6 +539,7 @@ export function KnowledgeDocumentsPage() {
     if (status === "success") return "成功";
     if (status === "failed") return "失败";
     if (status === "running") return "进行中";
+    if (status === "text_corrupted") return "文本损坏";
     return status || "-";
   };
 
@@ -694,8 +719,12 @@ export function KnowledgeDocumentsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className={cn("h-2 w-2 rounded-full", statusDotClass(doc.status))} />
-                        <span>{doc.status || "-"}</span>
+                        {doc.status?.toLowerCase() === "text_corrupted" ? (
+                          <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
+                        ) : (
+                          <span className={cn("h-2 w-2 rounded-full", statusDotClass(doc.status))} />
+                        )}
+                        <span>{formatDocumentStatus(doc.status)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -771,6 +800,16 @@ export function KnowledgeDocumentsPage() {
                           <PlayCircle className="h-4 w-4 mr-1" />
                           分块
                         </Button>
+                        {doc.status?.toLowerCase() === "text_corrupted" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReprocessWithOCR(doc)}
+                          >
+                            <ScanText className="h-4 w-4 mr-1" />
+                            OCR
+                          </Button>
+                        ) : null}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button size="icon" variant="ghost" className="h-8 w-8" title="更多">
@@ -1162,6 +1201,7 @@ export function KnowledgeDocumentsPage() {
                         "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                         log.status === "success" ? "bg-emerald-50 text-emerald-700" :
                         log.status === "failed" ? "bg-red-50 text-red-700" :
+                        log.status === "text_corrupted" ? "bg-orange-50 text-orange-700" :
                         "bg-amber-50 text-amber-700"
                       )}>
                         {formatLogStatus(log.status)}

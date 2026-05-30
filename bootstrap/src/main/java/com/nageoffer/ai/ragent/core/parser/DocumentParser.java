@@ -59,6 +59,18 @@ public interface DocumentParser {
     }
 
     /**
+     * 解析文档内容（从输入流），支持传入解析选项。
+     *
+     * @param stream   文档输入流
+     * @param fileName 文件名（用于推断类型）
+     * @param options  解析选项（可选）
+     * @return 解析后的文本内容
+     */
+    default String extractText(InputStream stream, String fileName, Map<String, Object> options) {
+        return extractText(stream, fileName);
+    }
+
+    /**
      * 检查是否支持指定的 MIME 类型
      *
      * @param mimeType MIME 类型

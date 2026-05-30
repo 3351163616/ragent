@@ -110,6 +110,10 @@ export interface KnowledgeDocumentUploadPayload {
   pipelineId?: string | null;
 }
 
+export interface KnowledgeDocumentReprocessPayload {
+  ocrStrategy?: "NO_OCR" | "AUTO" | "OCR_ONLY";
+}
+
 export interface KnowledgeChunkPageParams {
   current?: number;
   size?: number;
@@ -255,6 +259,13 @@ export const updateDocument = async (docId: string, data: {
 
 export const startDocumentChunk = async (docId: string): Promise<void> => {
   await api.post(`/knowledge-base/docs/${docId}/chunk`);
+};
+
+export const reprocessDocument = async (
+  docId: string,
+  payload: KnowledgeDocumentReprocessPayload = { ocrStrategy: "OCR_ONLY" }
+): Promise<void> => {
+  await api.post(`/knowledge-base/docs/${docId}/reprocess`, payload);
 };
 
 export const enableDocument = async (docId: string, enabled: boolean): Promise<void> => {

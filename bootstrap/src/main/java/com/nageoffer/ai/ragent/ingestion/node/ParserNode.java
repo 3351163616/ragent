@@ -31,10 +31,12 @@ import com.nageoffer.ai.ragent.core.parser.DocumentParser;
 import com.nageoffer.ai.ragent.core.parser.DocumentParserSelector;
 import com.nageoffer.ai.ragent.core.parser.ParseResult;
 import com.nageoffer.ai.ragent.core.parser.ParserType;
+import com.nageoffer.ai.ragent.core.parser.TikaDocumentParser;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -83,7 +85,18 @@ public class ParserNode implements IngestionNode {
             return NodeResult.fail(new ClientException("未配置 Tika 解析器"));
         }
 
-        Map<String, Object> options = rule == null ? Collections.emptyMap() : rule.getOptions();
+        Map<String, Object> options = new HashMap<>(rule == null || rule.getOptions() == null
+                ? Collections.emptyMap()
+                : rule.getOptions());
+        if (StringUtils.hasText(fileName)) {
+            options.put(TikaDocumentParser.OPTION_FILE_NAME, fileName);
+        }
+        if (context.getMetadata() != null) {
+            Object ocrStrategy = context.getMetadata().get(TikaDocumentParser.OPTION_OCR_STRATEGY);
+            if (ocrStrategy != null) {
+                options.put(TikaDocumentParser.OPTION_OCR_STRATEGY, ocrStrategy);
+            }
+        }
         ParseResult result = parser.parse(context.getRawBytes(), mimeType, options);
         context.setRawText(result.text());
 

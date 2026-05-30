@@ -37,9 +37,14 @@ import com.nageoffer.ai.ragent.core.chunk.ChunkingStrategyFactory;
 import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
 import com.nageoffer.ai.ragent.core.parser.DocumentParserSelector;
 import com.nageoffer.ai.ragent.core.parser.ParserType;
+import com.nageoffer.ai.ragent.core.parser.PdfOcrStrategy;
+import com.nageoffer.ai.ragent.core.parser.PdfParsingProperties;
+import com.nageoffer.ai.ragent.core.parser.TextQualityInspector;
+import com.nageoffer.ai.ragent.core.parser.TikaDocumentParser;
 import com.nageoffer.ai.ragent.framework.context.UserContext;
 import com.nageoffer.ai.ragent.framework.exception.ClientException;
 import com.nageoffer.ai.ragent.framework.mq.producer.MessageQueueProducer;
+import com.nageoffer.ai.ragent.ingestion.domain.context.DocumentSource;
 import com.nageoffer.ai.ragent.ingestion.dao.entity.IngestionPipelineDO;
 import com.nageoffer.ai.ragent.ingestion.dao.mapper.IngestionPipelineMapper;
 import com.nageoffer.ai.ragent.ingestion.domain.context.IngestionContext;
@@ -119,6 +124,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final MessageQueueProducer messageQueueProducer;
     private final KnowledgeScheduleProperties scheduleProperties;
     private final RemoteFileFetcher remoteFileFetcher;
+    private final PdfParsingProperties pdfParsingProperties;
 
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
@@ -160,9 +166,20 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public void startChunk(String docId) {
+        startChunk(docId, null);
+    }
+
+    @Override
+    public void reprocess(String docId, String ocrStrategy) {
+        PdfOcrStrategy strategy = PdfOcrStrategy.normalize(ocrStrategy, PdfOcrStrategy.OCR_ONLY);
+        startChunk(docId, strategy);
+    }
+
+    private void startChunk(String docId, PdfOcrStrategy ocrStrategy) {
         KnowledgeDocumentChunkEvent event = KnowledgeDocumentChunkEvent.builder()
                 .docId(docId)
                 .operator(UserContext.getUsername())
+                .ocrStrategy(ocrStrategy == null ? null : ocrStrategy.getCode())
                 .build();
 
         messageQueueProducer.sendInTransaction(
@@ -192,16 +209,22 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public void executeChunk(String docId) {
+        executeChunk(docId, null);
+    }
+
+    @Override
+    public void executeChunk(String docId, String ocrStrategy) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         if (documentDO == null) {
             log.warn("文档不存在，跳过分块任务, docId={}", docId);
             return;
         }
 
-        runChunkTask(documentDO);
+        PdfOcrStrategy strategy = PdfOcrStrategy.normalize(ocrStrategy, null);
+        runChunkTask(documentDO, strategy);
     }
 
-    private void runChunkTask(KnowledgeDocumentDO documentDO) {
+    private void runChunkTask(KnowledgeDocumentDO documentDO, PdfOcrStrategy ocrStrategy) {
         String docId = documentDO.getId();
         ProcessMode processMode = ProcessMode.normalize(documentDO.getProcessMode());
 
@@ -223,26 +246,38 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         try {
             List<VectorChunk> chunkResults;
+            TextQualitySummary qualitySummary;
             if (ProcessMode.PIPELINE == processMode) {
                 long start = System.currentTimeMillis();
-                chunkResults = runPipelineProcess(documentDO);
+                chunkResults = runPipelineProcess(documentDO, ocrStrategy);
                 chunkDuration = System.currentTimeMillis() - start;
+                qualitySummary = inspectChunkQuality(chunkResults, documentDO.getDocName());
             } else {
-                ChunkProcessResult result = runChunkProcess(documentDO);
+                ChunkProcessResult result = runChunkProcess(documentDO, ocrStrategy);
                 extractDuration = result.extractDuration();
                 chunkDuration = result.chunkDuration();
                 embedDuration = result.embedDuration();
                 chunkResults = result.chunks();
+                qualitySummary = result.qualitySummary();
             }
 
+            boolean textCorrupted = qualitySummary.textCorrupted();
+            String finalStatus = textCorrupted
+                    ? DocumentStatus.TEXT_CORRUPTED.getCode()
+                    : DocumentStatus.SUCCESS.getCode();
             long persistStart = System.currentTimeMillis();
             String collectionName = resolveCollectionName(documentDO.getKbId());
-            int savedCount = persistChunksAndVectorsAtomically(collectionName, docId, chunkResults);
+            int savedCount = persistChunksAndVectorsAtomically(collectionName, docId, chunkResults, finalStatus, !textCorrupted);
             persistDuration = System.currentTimeMillis() - persistStart;
 
+            if (textCorrupted) {
+                log.warn("文档文本疑似乱码，已跳过向量写入并标记为 text_corrupted, docId={}, corruptedChunks={}/{}, ratio={}",
+                        docId, qualitySummary.corruptedChunks(), qualitySummary.totalChunks(), qualitySummary.corruptionRatio());
+            }
             long totalDuration = System.currentTimeMillis() - totalStartTime;
-            updateChunkLog(chunkLog.getId(), DocumentStatus.SUCCESS.getCode(), savedCount,
-                    extractDuration, chunkDuration, embedDuration, persistDuration, totalDuration, null);
+            updateChunkLog(chunkLog.getId(), finalStatus, savedCount,
+                    extractDuration, chunkDuration, embedDuration, persistDuration, totalDuration,
+                    textCorrupted ? qualitySummary.reason() : null);
         } catch (Exception e) {
             log.error("文档分块任务执行失败：docId={}", docId, e);
             markChunkFailed(documentDO.getId());
@@ -252,7 +287,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
-    private int persistChunksAndVectorsAtomically(String collectionName, String docId, List<VectorChunk> chunkResults) {
+    private int persistChunksAndVectorsAtomically(String collectionName, String docId, List<VectorChunk> chunkResults,
+                                                  String documentStatus, boolean writeVectors) {
         List<KnowledgeChunkCreateRequest> chunks = chunkResults.stream()
                 .map(vc -> {
                     KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
@@ -266,11 +302,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             knowledgeChunkService.deleteByDocId(docId);
             knowledgeChunkService.batchCreate(docId, chunks);
             vectorStoreService.deleteDocumentVectors(collectionName, docId);
-            vectorStoreService.indexDocumentChunks(collectionName, docId, chunkResults);
+            if (writeVectors) {
+                vectorStoreService.indexDocumentChunks(collectionName, docId, chunkResults);
+            }
             KnowledgeDocumentDO updateDocumentDO = KnowledgeDocumentDO.builder()
                     .id(docId)
                     .chunkCount(chunks.size())
-                    .status(DocumentStatus.SUCCESS.getCode())
+                    .status(documentStatus)
                     .updatedBy(UserContext.getUsername())
                     .build();
             documentMapper.updateById(updateDocumentDO);
@@ -300,7 +338,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      * 使用分块策略处理文档，失败直接抛异常，由 runChunkTask 统一处理错误状态
      * 4 阶段中的前 3 阶段：Extract → Chunk → Embed
      */
-    private ChunkProcessResult runChunkProcess(KnowledgeDocumentDO documentDO) {
+    private ChunkProcessResult runChunkProcess(KnowledgeDocumentDO documentDO, PdfOcrStrategy ocrStrategy) {
         ChunkingMode chunkingMode = ChunkingMode.fromValue(documentDO.getChunkStrategy());
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String embeddingModel = kbDO.getEmbeddingModel();
@@ -308,7 +346,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         long extractStart = System.currentTimeMillis();
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
-            String text = parserSelector.select(ParserType.TIKA.getType()).extractText(is, documentDO.getDocName());
+            Map<String, Object> options = ocrStrategy == null
+                    ? Map.of()
+                    : Map.of(TikaDocumentParser.OPTION_OCR_STRATEGY, ocrStrategy.getCode());
+            String text = parserSelector.select(ParserType.TIKA.getType()).extractText(is, documentDO.getDocName(), options);
             long extractDuration = System.currentTimeMillis() - extractStart;
 
             ChunkingStrategy chunkingStrategy = chunkingStrategyFactory.requireStrategy(chunkingMode);
@@ -316,18 +357,56 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             List<VectorChunk> chunks = chunkingStrategy.chunk(text, config);
             long chunkDuration = System.currentTimeMillis() - chunkStart;
 
-            long embedStart = System.currentTimeMillis();
-            chunkEmbeddingService.embed(chunks, embeddingModel);
-            long embedDuration = System.currentTimeMillis() - embedStart;
+            TextQualitySummary qualitySummary = inspectChunkQuality(chunks, documentDO.getDocName());
+            long embedDuration = 0;
+            if (!qualitySummary.textCorrupted()) {
+                long embedStart = System.currentTimeMillis();
+                chunkEmbeddingService.embed(chunks, embeddingModel);
+                embedDuration = System.currentTimeMillis() - embedStart;
+            }
 
-            return new ChunkProcessResult(chunks, extractDuration, chunkDuration, embedDuration);
+            return new ChunkProcessResult(chunks, extractDuration, chunkDuration, embedDuration, qualitySummary);
         } catch (Exception e) {
             throw new RuntimeException("文档内容提取或分块失败", e);
         }
     }
 
     private record ChunkProcessResult(List<VectorChunk> chunks, long extractDuration, long chunkDuration,
-                                      long embedDuration) {
+                                      long embedDuration, TextQualitySummary qualitySummary) {
+    }
+
+    private record TextQualitySummary(int totalChunks, int corruptedChunks, double corruptionRatio,
+                                      boolean textCorrupted, String reason) {
+    }
+
+    private TextQualitySummary inspectChunkQuality(List<VectorChunk> chunks, String fileName) {
+        PdfParsingProperties.PostIngestionCheck postCheck = pdfParsingProperties.getPostIngestionCheck();
+        if (postCheck == null || !postCheck.isEnabled() || CollUtil.isEmpty(chunks)) {
+            return new TextQualitySummary(chunks == null ? 0 : chunks.size(), 0, 0D, false, "DISABLED");
+        }
+
+        int corrupted = 0;
+        String firstReason = "OK";
+        for (VectorChunk chunk : chunks) {
+            TextQualityInspector.TextQualityReport report = TextQualityInspector.inspect(
+                    chunk == null ? null : chunk.getContent(),
+                    fileName,
+                    pdfParsingProperties.getCorruptionDetection()
+            );
+            if (report.likelyCorrupted()) {
+                corrupted++;
+                if ("OK".equals(firstReason)) {
+                    firstReason = report.reason();
+                }
+            }
+        }
+
+        double ratio = (double) corrupted / chunks.size();
+        boolean textCorrupted = ratio >= postCheck.getCorruptionThreshold();
+        String reason = textCorrupted
+                ? "TEXT_CORRUPTED: " + firstReason + ", corruptedRatio=" + ratio
+                : "OK";
+        return new TextQualitySummary(chunks.size(), corrupted, ratio, textCorrupted, reason);
     }
 
     private record ProcessModeConfig(ProcessMode processMode, ChunkingMode chunkingMode, String chunkConfig,
@@ -337,7 +416,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     /**
      * 使用 Pipeline 处理文档，失败直接抛异常，由 runChunkTask 统一处理错误状态
      */
-    private List<VectorChunk> runPipelineProcess(KnowledgeDocumentDO documentDO) {
+    private List<VectorChunk> runPipelineProcess(KnowledgeDocumentDO documentDO, PdfOcrStrategy ocrStrategy) {
         String docId = String.valueOf(documentDO.getId());
         String pipelineId = documentDO.getPipelineId();
 
@@ -356,11 +435,23 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new RuntimeException("读取文件内容失败：docId=" + docId, e);
         }
 
+        Map<String, Object> metadata = new HashMap<>();
+        if (ocrStrategy != null) {
+            metadata.put(TikaDocumentParser.OPTION_OCR_STRATEGY, ocrStrategy.getCode());
+        }
+        metadata.put(TikaDocumentParser.OPTION_FILE_NAME, documentDO.getDocName());
+
         IngestionContext context = IngestionContext.builder()
                 .taskId(docId)
                 .pipelineId(pipelineId)
+                .source(DocumentSource.builder()
+                        .type(com.nageoffer.ai.ragent.ingestion.domain.enums.SourceType.FILE)
+                        .location(documentDO.getFileUrl())
+                        .fileName(documentDO.getDocName())
+                        .build())
                 .rawBytes(fileBytes)
                 .mimeType(documentDO.getFileType())
+                .metadata(metadata)
                 .vectorSpaceId(VectorSpaceId.builder()
                         .logicalName(kbDO.getCollectionName())
                         .build())
@@ -386,7 +477,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         if (documentDO == null) {
             return;
         }
-        runChunkTask(documentDO);
+        runChunkTask(documentDO, null);
     }
 
     private void markChunkFailed(String docId) {
