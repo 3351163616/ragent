@@ -52,6 +52,27 @@ public class RAGConfigProperties {
     private Boolean queryRewriteEnabled;
 
     /**
+     * 查询改写语义相似度校验开关
+     * <p>
+     * 开启后会在 LLM 改写完成后计算"改写前 Query"与"改写后 Query"的余弦相似度，
+     * 低于阈值时丢弃改写结果，回退到术语归一化后的原始问题。
+     */
+    @Value("${rag.query-rewrite.semantic-validation.enabled:true}")
+    private Boolean queryRewriteSemanticValidationEnabled;
+
+    /**
+     * 查询改写语义相似度硬阈值
+     */
+    @Value("${rag.query-rewrite.semantic-validation.min-similarity:0.8}")
+    private Double queryRewriteSemanticSimilarityThreshold;
+
+    /**
+     * 短 Query 判定长度，按去除标点和空白后的字符数计算
+     */
+    @Value("${rag.query-rewrite.short-query.max-length:8}")
+    private Integer queryRewriteShortQueryMaxLength;
+
+    /**
      * 回答引用来源开关
      * <p>
      * 控制是否在知识库证据中注入来源编号，并在流式完成事件和历史消息中返回 citations 数组

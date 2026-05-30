@@ -83,6 +83,9 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     /** 术语映射服务，负责将用户口语化表达归一化为标准检索术语 */
     private final QueryTermMappingService queryTermMappingService;
 
+    /** 查询改写质量守卫，负责过滤语义漂移和短 Query 噪声 */
+    private final QueryRewriteGuard queryRewriteGuard;
+
     /** Prompt 模板加载器，负责加载和渲染 StringTemplate 格式的提示词模板 */
     private final PromptTemplateLoader promptTemplateLoader;
 
@@ -195,14 +198,15 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
             RewriteResult parsed = parseRewriteAndSplit(raw);
 
             if (parsed != null) {
+                RewriteResult guarded = queryRewriteGuard.validateOrFallback(originalQuestion, normalizedQuestion, parsed);
                 log.info("""
                         RAG用户问题查询改写+拆分：
                         原始问题：{}
                         归一化后：{}
                         改写结果：{}
                         子问题：{}
-                        """, originalQuestion, normalizedQuestion, parsed.rewrittenQuestion(), parsed.subQuestions());
-                return parsed;
+                        """, originalQuestion, normalizedQuestion, guarded.rewrittenQuestion(), guarded.subQuestions());
+                return guarded;
             }
 
             log.warn("查询改写+拆分解析失败，使用归一化问题兜底 - normalizedQuestion={}", normalizedQuestion);

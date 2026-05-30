@@ -55,6 +55,11 @@ rag:
 
   query-rewrite:
     enabled: true
+    semantic-validation:
+      enabled: true
+      min-similarity: 0.8
+    short-query:
+      max-length: 8
 
   answer-citation:
     enabled: true
