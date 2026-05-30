@@ -32,7 +32,7 @@ public final class TextCleanupUtil {
      * <p>
      * 执行以下清理操作：
      * 1. 移除 BOM 标记（﻿）
-     * 2. 移除 OCR 中文分词空格（中文字符间的单个空格）
+     * 2. 移除 OCR 中文分词空格（中文字符间的空格或制表符）
      * 3. 移除行尾多余的空格和制表符
      * 4. 压缩连续的空行（3个以上压缩为2个）
      * 5. 去除首尾空白
@@ -48,8 +48,8 @@ public final class TextCleanupUtil {
         return text
                 // 移除 BOM 标记
                 .replace("﻿", "")
-                // 移除 OCR 中文分词空格（中文字符间的单个空格）
-                .replaceAll("([\\u4e00-\\u9fff])\\s([\\u4e00-\\u9fff])", "$1$2")
+                // 移除 OCR 中文分词空格（中文字符间的空格或制表符）
+                .replaceAll("(?<=[\\u4e00-\\u9fff])[ \\t]+(?=[\\u4e00-\\u9fff])", "")
                 // 移除行尾的空格和制表符
                 .replaceAll("[ \\t]+\\n", "\n")
                 // 压缩连续的空行（3个以上压缩为2个）

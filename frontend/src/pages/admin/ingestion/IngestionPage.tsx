@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  Braces,
   ClipboardList,
   FileUp,
+  FileText,
   FolderKanban,
+  Globe2,
+  Info,
   Pencil,
   Plus,
   RefreshCw,
+  Ruler,
   Trash2
 } from "lucide-react";
 import { toast } from "sonner";
@@ -50,6 +55,12 @@ import { getErrorMessage } from "@/utils/error";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PageSizeSelect } from "@/components/admin/PageSizeSelect";
 import { PAGE_SIZE_OPTIONS } from "@/components/admin/pagination";
+import { cn } from "@/lib/utils";
+import {
+  CONDITION_FIELD_REFERENCES,
+  CONDITION_OPERATOR_REFERENCES,
+  CONDITION_TEMPLATES
+} from "@/constants/conditionTemplates";
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "pending" },
@@ -129,6 +140,67 @@ const nodeStatusVariant = (status?: string | null) => {
   if (normalized === "success") return "default";
   if (normalized === "failed") return "destructive";
   return "secondary";
+};
+
+const CONDITION_TEMPLATE_ICONS: Record<string, typeof Braces> = {
+  none: Braces,
+  "local-file": FileText,
+  "remote-url": Globe2,
+  pdf: FileText,
+  markdown: FileText,
+  "large-file": Ruler
+};
+
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const formatCondition = (condition: Record<string, unknown> | null) =>
+  condition ? JSON.stringify(condition, null, 2) : "";
+
+const resolveConditionTemplateId = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return "none";
+  }
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return "custom";
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const normalized = stableStringify(parsed);
+    const template = CONDITION_TEMPLATES.find(
+      (item) => item.condition && stableStringify(item.condition) === normalized
+    );
+    return template?.id || "custom";
+  } catch {
+    return "custom";
+  }
+};
+
+const getConditionValidation = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      JSON.parse(trimmed);
+      return { status: "success" as const, message: "JSON 条件格式有效" };
+    } catch {
+      return { status: "error" as const, message: "JSON 条件格式有误，保存前需要修正" };
+    }
+  }
+  return { status: "success" as const, message: "SpEL 表达式将由后端执行" };
 };
 
 const pipelineSchema = z.object({
@@ -708,6 +780,108 @@ interface PipelineDialogProps {
   pipeline: IngestionPipeline | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: IngestionPipelinePayload, mode: "create" | "edit") => Promise<void>;
+}
+
+interface ConditionEditorProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function ConditionEditor({ value, onChange }: ConditionEditorProps) {
+  const selectedTemplateId = resolveConditionTemplateId(value);
+  const validation = getConditionValidation(value);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed bg-muted/20 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="text-sm font-medium">条件配置（可选）</label>
+        <Badge variant={selectedTemplateId === "custom" ? "secondary" : "outline"}>
+          {selectedTemplateId === "custom" ? "自定义" : "模板"}
+        </Badge>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {CONDITION_TEMPLATES.map((template) => {
+          const Icon = CONDITION_TEMPLATE_ICONS[template.id] || Braces;
+          const active = selectedTemplateId === template.id;
+          return (
+            <button
+              key={template.id}
+              type="button"
+              aria-pressed={active}
+              className={cn(
+                "flex min-h-16 items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+                active
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background hover:border-primary/50 hover:bg-muted/50"
+              )}
+              onClick={() => onChange(formatCondition(template.condition))}
+            >
+              <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium leading-5">{template.label}</span>
+                <span className="block text-xs leading-5 text-muted-foreground">{template.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">自定义条件表达式</label>
+        <Textarea
+          rows={4}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder='{"field":"source_type","op":"eq","value":"file"} 或 #ctx.source.type.value == "file"'
+        />
+        {validation ? (
+          <div
+            className={cn(
+              "text-xs",
+              validation.status === "error" ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {validation.message}
+          </div>
+        ) : null}
+      </div>
+
+      <details className="rounded-lg border bg-background px-3 py-2">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
+          <Info className="h-4 w-4" />
+          字段和操作符参考
+        </summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">字段</div>
+            <div className="grid gap-2">
+              {CONDITION_FIELD_REFERENCES.map((field) => (
+                <div key={field.field} className="rounded-md bg-muted/50 px-2 py-1.5 text-xs">
+                  <div className="font-mono font-medium">{field.field}</div>
+                  <div className="text-muted-foreground">
+                    {field.label}
+                    {field.values ? `：${field.values}` : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase text-muted-foreground">操作符</div>
+            <div className="grid gap-2">
+              {CONDITION_OPERATOR_REFERENCES.map((operator) => (
+                <div key={operator.operator} className="rounded-md bg-muted/50 px-2 py-1.5 text-xs">
+                  <span className="font-mono font-medium">{operator.operator}</span>
+                  <span className="text-muted-foreground">：{operator.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: PipelineDialogProps) {
@@ -1744,21 +1918,14 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                       </div>
                     ) : null}
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">条件（JSON / SpEL，可选）</label>
-                      <Textarea
-                        rows={2}
-                        value={node.condition}
-                        onChange={(event) =>
-                          setNodes((prev) =>
-                            prev.map((item) =>
-                              item.id === node.id ? { ...item, condition: event.target.value } : item
-                            )
-                          )
-                        }
-                        placeholder='{"field":"source_type","op":"eq","value":"file"} 或 #context.source.type == "file"'
-                      />
-                    </div>
+                    <ConditionEditor
+                      value={node.condition}
+                      onChange={(condition) =>
+                        setNodes((prev) =>
+                          prev.map((item) => (item.id === node.id ? { ...item, condition } : item))
+                        )
+                      }
+                    />
                   </div>
                 ))}
 

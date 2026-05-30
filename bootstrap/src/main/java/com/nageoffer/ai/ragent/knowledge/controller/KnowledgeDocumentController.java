@@ -32,9 +32,11 @@ import com.nageoffer.ai.ragent.knowledge.service.KnowledgeDocumentService;
 import com.nageoffer.ai.ragent.rag.service.FileStorageService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.util.StreamUtils;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -48,7 +50,9 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -60,6 +64,7 @@ import java.util.Map;
  */
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 @Validated
 public class KnowledgeDocumentController {
 
@@ -186,6 +191,40 @@ public class KnowledgeDocumentController {
         response.setHeader("Content-Disposition", "inline; filename=\"" + URLEncoder.encode(doc.getDocName(), StandardCharsets.UTF_8) + "\"");
         try (InputStream in = fileStorageService.openStream(doc.getFileUrl())) {
             StreamUtils.copy(in, response.getOutputStream());
+        } catch (Exception ex) {
+            if (isClientAbort(ex)) {
+                log.warn("文档源文件写出中断，可能是客户端关闭连接或读取超时: docId={}, fileUrl={}, reason={}",
+                        docId,
+                        doc.getFileUrl(),
+                        ex.getMessage());
+                return;
+            }
+            throw ex;
         }
+    }
+
+    private boolean isClientAbort(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof AsyncRequestNotUsableException
+                    || current instanceof SocketTimeoutException
+                    || current instanceof IOException && isClientAbortMessage(current.getMessage())
+                    || "ClientAbortException".equals(current.getClass().getSimpleName())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isClientAbortMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        return normalized.contains("broken pipe")
+                || normalized.contains("connection reset")
+                || normalized.contains("servletoutputstream failed to write")
+                || normalized.contains("sockettimeoutexception");
     }
 }

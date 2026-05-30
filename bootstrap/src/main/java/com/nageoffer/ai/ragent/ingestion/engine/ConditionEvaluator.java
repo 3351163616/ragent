@@ -20,6 +20,7 @@ package com.nageoffer.ai.ragent.ingestion.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.ingestion.domain.context.IngestionContext;
+import com.nageoffer.ai.ragent.ingestion.domain.enums.SourceType;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -100,7 +101,10 @@ public class ConditionEvaluator {
         if (!StringUtils.hasText(field)) {
             return true;
         }
-        String operator = node.path("operator").asText("eq");
+        String operator = node.path("operator").asText(null);
+        if (!StringUtils.hasText(operator)) {
+            operator = node.path("op").asText("eq");
+        }
         JsonNode valueNode = node.get("value");
         Object left = readField(context, field);
         Object right = valueNode == null ? null : objectMapper.convertValue(valueNode, Object.class);
@@ -108,12 +112,40 @@ public class ConditionEvaluator {
     }
 
     private Object readField(IngestionContext context, String path) {
+        String normalizedPath = path.trim();
+        Object aliasValue = readAliasField(context, normalizedPath);
+        if (aliasValue != AliasField.UNMATCHED) {
+            return aliasValue;
+        }
         try {
             BeanWrapperImpl wrapper = new BeanWrapperImpl(context);
-            return wrapper.getPropertyValue(path);
+            return normalizeFieldValue(wrapper.getPropertyValue(normalizedPath));
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private Object readAliasField(IngestionContext context, String path) {
+        return switch (path) {
+            case "source_type" -> context.getSource() == null || context.getSource().getType() == null
+                    ? null
+                    : context.getSource().getType().getValue();
+            case "source_location" -> context.getSource() == null ? null : context.getSource().getLocation();
+            case "file_name", "source_file_name" -> context.getSource() == null ? null : context.getSource().getFileName();
+            case "mime_type" -> context.getMimeType();
+            case "file_size", "raw_bytes_length" -> context.getRawBytes() == null ? null : context.getRawBytes().length;
+            default -> AliasField.UNMATCHED;
+        };
+    }
+
+    private Object normalizeFieldValue(Object value) {
+        if (value instanceof SourceType sourceType) {
+            return sourceType.getValue();
+        }
+        if (value instanceof Enum<?> enumValue) {
+            return enumValue.name().toLowerCase();
+        }
+        return value;
     }
 
     private boolean compare(Object left, Object right, String operator) {
@@ -133,13 +165,15 @@ public class ConditionEvaluator {
     }
 
     private boolean in(Object left, Object right) {
+        Object normalizedLeft = normalize(left);
+        Object normalizedRight = normalize(right);
         if (right instanceof List<?> list) {
-            return list.contains(left);
+            return list.stream().map(this::normalize).anyMatch(item -> Objects.equals(item, normalizedLeft));
         }
         if (left instanceof List<?> list) {
-            return list.contains(right);
+            return list.stream().map(this::normalize).anyMatch(item -> Objects.equals(item, normalizedRight));
         }
-        return Objects.equals(normalize(left), normalize(right));
+        return Objects.equals(normalizedLeft, normalizedRight);
     }
 
     private boolean contains(Object left, Object right) {
@@ -150,7 +184,8 @@ public class ConditionEvaluator {
             return ls.contains(String.valueOf(right));
         }
         if (left instanceof List<?> list) {
-            return list.contains(right);
+            Object normalizedRight = normalize(right);
+            return list.stream().map(this::normalize).anyMatch(item -> Objects.equals(item, normalizedRight));
         }
         return false;
     }
@@ -189,7 +224,11 @@ public class ConditionEvaluator {
         if (value instanceof String s) {
             return s.trim();
         }
-        return value;
+        return normalizeFieldValue(value);
+    }
+
+    private enum AliasField {
+        UNMATCHED
     }
 
     private boolean evalSpel(IngestionContext context, String expression) {

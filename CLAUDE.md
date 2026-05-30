@@ -107,20 +107,25 @@ user/                             # Sa-Token 用户认证
 
 ```
 rag/core/
-├── guidance/    # 置信度不足时的澄清引导
-├── intent/      # 意图识别（IntentTreeFactory + IntentTreeCacheManager + DefaultIntentClassifier）
-├── mcp/         # MCP 客户端调用封装
-├── memory/      # 会话记忆加载 / 摘要压缩
-├── prompt/      # Prompt 场景路由（PromptScene: KB_ONLY / MCP_ONLY / MIXED）
-├── retrieve/    # MultiChannelRetrievalEngine + SearchChannel + SearchResultPostProcessor
-├── rewrite/     # MultiQuestionRewriteService + QueryTermMappingService
-└── vector/      # VectorStoreService 接口 + Pg / Milvus 双实现
+├── guidance/        # 置信度不足时的澄清引导
+├── intent/          # 意图识别（IntentTreeFactory + IntentTreeCacheManager + DefaultIntentClassifier）
+├── mcp/             # MCP 客户端调用封装
+├── memory/          # 会话记忆加载 / 摘要压缩
+├── prompt/          # Prompt 场景路由（PromptScene: KB_ONLY / MCP_ONLY / MIXED）
+├── retrieve/        # MultiChannelRetrievalEngine + SearchChannel + SearchResultPostProcessor
+├── rewrite/         # MultiQuestionRewriteService + QueryTermMappingService
+├── vector/          # VectorStoreService 接口 + Pg / Milvus 双实现
+├── citation/        # CitationService 引用标注
+├── configbootstrap/ # 据已入库文档启发式生成「候选」术语映射 + 意图节点（config-bootstrap.st）
+└── model/           # InternalChatModelSelector 内部模型选择
 ```
 
-### infra-ai 模块（`com.nageoffer.ai.ragent.infra.ai.*`）
+此外 `rag/eval/`（与 `rag/core/` 同级）提供单题调试接口 `/rag/eval`（`EvalController` + `EvalProperties` + `EvalResponse`），用于对单条问题观测检索/意图/答案，便于 Prompt 与模型调优。
+
+### infra-ai 模块（根包 `com.nageoffer.ai.ragent.infra.*`，注意是 `infra` 而非 `infra.ai`）
 
 ```
-infra/ai/
+infra/
 ├── chat/        # ChatClient 接口 + AbstractOpenAIStyleChatClient + 各 Provider 实现
 ├── embedding/   # EmbeddingClient 接口 + 各 Provider 实现
 ├── rerank/      # RerankClient 接口 + 各 Provider 实现
@@ -204,7 +209,7 @@ mcp/
 
 ### Prompt 模板（`bootstrap/src/main/resources/prompt/`）
 
-14 个 `.st`（Spring AI String Template）模板，定位在管线中各阶段：
+16 个 `.st`（Spring AI String Template）模板，定位在管线中各阶段（另有 `buckup/` 存放历史版本，非运行时使用）：
 
 | 模板 | 用途 |
 |------|------|
@@ -222,6 +227,8 @@ mcp/
 | `answer-chat-mcp-kb-mixed.st` | KB + MCP 混合场景 |
 | `answer-chat-system.st` | SYSTEM 类意图（FAQ / 系统指令） |
 | `pdf-format-guard.st` | PDF 解析后的格式守卫 |
+| `opening-reply.st` | 正式检索/回答前的低承诺开场承接句 |
+| `config-bootstrap.st` | 据已入库分块生成「候选」术语映射与意图节点 |
 
 ### 模型路由（`infra-ai/`）
 
