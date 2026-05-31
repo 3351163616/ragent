@@ -22,6 +22,7 @@ import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
+import com.nageoffer.ai.ragent.infra.token.TokenCounterService;
 import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
 import com.nageoffer.ai.ragent.rag.core.model.InternalChatModelSelector;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
@@ -96,6 +97,8 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     /** 内部 LLM 任务模型选择器 */
     private final InternalChatModelSelector internalChatModelSelector;
 
+    private final TokenCounterService tokenCounterService;
+
     /** Prompt 模板加载器，加载摘要生成用的 Prompt 模板 */
     private final PromptTemplateLoader promptTemplateLoader;
 
@@ -155,10 +158,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     }
 
     /**
-     * 为摘要消息添加装饰前缀。
+     * 为摘要消息添加上下文标签。
      * <p>
-     * 若摘要内容已以"对话摘要："或"摘要："开头，则不重复添加前缀。
-     * 装饰后的摘要以 SYSTEM 角色返回，便于在消息列表中与其他 SYSTEM 消息区分。
+     * 摘要属于动态会话上下文，不再作为 SYSTEM 消息注入，避免覆盖稳定系统提示词并破坏 Prompt Cache 前缀。
      *
      * @param summary 原始摘要消息
      * @return 添加前缀后的摘要消息，输入为 null 或空内容时原样返回
@@ -172,7 +174,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 CONTEXT_FORMAT_PATH, "summary-wrapper",
                 Map.of("content", summary.getContent().trim())
         );
-        return ChatMessage.system(wrapped);
+        return ChatMessage.user(wrapped);
     }
 
     /**
@@ -222,6 +224,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
 
             // 加载上次的摘要记录，用于增量合并
             ConversationSummaryDO latestSummary = conversationGroupService.findLatestSummary(conversationId, userId);
+            if (isDebounced(latestSummary)) {
+                return;
+            }
             // 获取滑动窗口中保留的最新 maxTurns 条 USER 消息（用于确定窗口起始位置）
             List<ConversationMessageDO> latestUserTurns = conversationGroupService.listLatestUserOnlyMessages(
                     conversationId,
@@ -254,6 +259,12 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
             if (CollUtil.isEmpty(toSummarize)) {
                 return;
             }
+            int summarizeTokens = estimateTokens(toSummarize);
+            if (!shouldSummarize(latestSummary, summarizeTokens)) {
+                log.debug("摘要跳过 - conversationId: {}, userId: {}, pendingTokens: {}, hasSummary: {}",
+                        conversationId, userId, summarizeTokens, latestSummary != null);
+                return;
+            }
 
             // 记录待压缩消息中的最后一条 ID，作为本次摘要覆盖的边界
             String lastMessageId = resolveLastMessageId(toSummarize);
@@ -270,8 +281,8 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
 
             // 持久化新摘要，记录覆盖到的最后消息 ID（供下次增量压缩使用）
             createSummary(conversationId, userId, summary, lastMessageId);
-            log.info("摘要成功 - conversationId：{}，userId：{}，消息数：{}，耗时：{}ms",
-                    conversationId, userId, toSummarize.size(),
+            log.info("摘要成功 - conversationId：{}，userId：{}，消息数：{}，pendingTokens：{}，耗时：{}ms",
+                    conversationId, userId, toSummarize.size(), summarizeTokens,
                     System.currentTimeMillis() - startTime);
         } catch (Exception e) {
             log.error("摘要失败 - conversationId：{}，userId：{}", conversationId, userId, e);
@@ -350,6 +361,63 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
             log.error("对话记忆摘要生成失败, conversationId相关消息数: {}", messages.size(), e);
             return existingSummary;
         }
+    }
+
+    private boolean shouldSummarize(ConversationSummaryDO latestSummary, int pendingTokens) {
+        int threshold = latestSummary == null
+                ? resolveInitialTriggerTokens()
+                : safePositive(memoryProperties.getSummaryMinTokenThreshold(), 20000);
+        return pendingTokens >= threshold;
+    }
+
+    private int resolveInitialTriggerTokens() {
+        int absoluteThreshold = safePositive(memoryProperties.getSummaryTriggerTokenThreshold(), 200000);
+        String modelId = internalChatModelSelector.modelId();
+        int maxContextTokens = internalChatModelSelector.maxContextTokens(modelId);
+        double ratio = memoryProperties.getSummaryTriggerContextRatio() == null
+                ? 0.7D
+                : memoryProperties.getSummaryTriggerContextRatio();
+        int ratioThreshold = (int) Math.floor(maxContextTokens * ratio);
+        int softThreshold = Math.max(absoluteThreshold, ratioThreshold);
+        int hardCap = (int) Math.floor(maxContextTokens * 0.9D);
+        return Math.max(1024, Math.min(softThreshold, hardCap));
+    }
+
+    private boolean isDebounced(ConversationSummaryDO latestSummary) {
+        if (latestSummary == null) {
+            return false;
+        }
+        int debounceSeconds = memoryProperties.getSummaryDebounceSeconds() == null
+                ? 0
+                : memoryProperties.getSummaryDebounceSeconds();
+        if (debounceSeconds <= 0) {
+            return false;
+        }
+        Date updatedAt = latestSummary.getUpdateTime() == null
+                ? latestSummary.getCreateTime()
+                : latestSummary.getUpdateTime();
+        return updatedAt != null
+                && System.currentTimeMillis() - updatedAt.getTime() < debounceSeconds * 1000L;
+    }
+
+    private int estimateTokens(List<ConversationMessageDO> messages) {
+        if (CollUtil.isEmpty(messages)) {
+            return 0;
+        }
+        int total = 0;
+        for (ConversationMessageDO message : messages) {
+            if (message == null) {
+                continue;
+            }
+            Integer tokens = tokenCounterService.countTokens(message.getContent());
+            total += tokens == null ? 0 : tokens;
+            total += 4;
+        }
+        return total;
+    }
+
+    private int safePositive(Integer value, int fallback) {
+        return value != null && value > 0 ? value : fallback;
     }
 
     /**

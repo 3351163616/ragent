@@ -40,7 +40,7 @@ import java.util.concurrent.Executor;
  *       减少总加载时间（摘要加载和历史加载互不依赖）</li>
  *   <li><b>降级容错</b>：摘要加载失败时返回 null（跳过摘要），历史加载失败时返回空列表，
  *       确保记忆加载阶段不会因部分失败而阻塞整个管线</li>
- *   <li><b>摘要合并</b>：{@link #attachSummary} 将摘要以 SYSTEM 消息形式插入历史消息列表头部，
+ *   <li><b>摘要合并</b>：{@link #attachSummary} 将摘要以动态上下文形式插入历史消息列表头部，
  *       使 LLM 能够感知更早期的对话上下文</li>
  *   <li><b>异步摘要压缩</b>：在 {@link #append} 中追加消息后，异步触发摘要压缩检查</li>
  * </ul>
@@ -196,13 +196,13 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
      *   <li>若历史消息为空，直接返回空列表（即使有摘要也没有意义）</li>
      *   <li>若摘要为 null，直接返回原始历史消息列表</li>
      *   <li>若摘要存在，先通过 {@link ConversationMemorySummaryService#decorateIfNeeded} 装饰摘要
-     *       （添加"对话摘要："前缀），然后将其作为 SYSTEM 消息插入列表头部</li>
+     *       （添加摘要标签），然后插入列表头部</li>
      * </ul>
      * <p>
      * 这样做的目的是让 LLM 在接收到消息列表时，首先看到更早期的对话摘要作为背景知识，
      * 然后再看到近期的具体历史消息，从而实现"摘要 + 滑动窗口"的记忆策略。
      *
-     * @param summary  摘要消息（SYSTEM 角色），可能为 null
+     * @param summary  摘要消息，可能为 null
      * @param messages 历史消息列表
      * @return 合并后的消息列表（摘要在前 + 历史在后）
      */
@@ -215,7 +215,7 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
             return messages;
         }
         List<ChatMessage> result = new ArrayList<>();
-        // 将装饰后的摘要插入列表头部，作为 LLM 的背景知识
+        // 将装饰后的摘要插入列表头部，作为动态上下文，避免污染稳定 system 前缀
         result.add(summaryService.decorateIfNeeded(summary));
         result.addAll(messages);
         return result;

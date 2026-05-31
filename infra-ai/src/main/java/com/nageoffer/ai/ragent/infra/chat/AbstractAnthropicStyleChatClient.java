@@ -46,6 +46,7 @@ import okhttp3.ResponseBody;
 import okio.BufferedSource;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -140,6 +141,7 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
         String rawBody = null;
         StringBuilder contentBuilder = new StringBuilder();
         StringBuilder reasoningBuilder = new StringBuilder();
+        JsonElement usage = null;
         int eventCount = 0;
         boolean completed = false;
         Throwable error = null;
@@ -186,6 +188,9 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                         contentBuilder.append(event.content());
                         callback.onContent(event.content());
                     }
+                    if (event.hasUsage()) {
+                        usage = event.usage();
+                    }
                     if (event.completed()) {
                         callback.onComplete();
                         completed = true;
@@ -218,6 +223,7 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
                     responseHeaders,
                     contentBuilder.toString(),
                     reasoningBuilder.toString(),
+                    usage,
                     eventCount,
                     completed,
                     cancelled.get(),
@@ -245,12 +251,14 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
         }
 
         JsonArray messagesArr = new JsonArray();
-        String systemContent = null;
+        List<String> systemParts = new ArrayList<>();
         List<ChatMessage> messages = request.getMessages();
         if (CollUtil.isNotEmpty(messages)) {
             for (ChatMessage m : messages) {
                 if (m.getRole() == ChatMessage.Role.SYSTEM) {
-                    systemContent = m.getContent();
+                    if (m.getContent() != null && !m.getContent().isBlank()) {
+                        systemParts.add(m.getContent());
+                    }
                 } else {
                     JsonObject msg = new JsonObject();
                     msg.addProperty("role", m.getRole() == ChatMessage.Role.ASSISTANT ? "assistant" : "user");
@@ -261,8 +269,8 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
         }
         body.add("messages", messagesArr);
 
-        if (systemContent != null) {
-            body.addProperty("system", systemContent);
+        if (!systemParts.isEmpty()) {
+            body.addProperty("system", String.join("\n\n", systemParts));
         }
 
         if (request.getTemperature() != null) {

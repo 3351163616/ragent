@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.infra.http;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
 import lombok.NoArgsConstructor;
 
 /**
@@ -60,6 +61,7 @@ public final class AnthropicStyleSseParser {
         if (obj == null) {
             return ParsedEvent.empty();
         }
+        JsonObject usage = extractUsage(obj);
 
         if ("error".equals(optString(obj, "type"))) {
             String msg = payload;
@@ -73,20 +75,25 @@ public final class AnthropicStyleSseParser {
         }
 
         if (!obj.has("delta") || !obj.get("delta").isJsonObject()) {
-            return ParsedEvent.empty();
+            return usage == null ? ParsedEvent.empty() : ParsedEvent.usage(usage);
         }
 
         JsonObject delta = obj.getAsJsonObject("delta");
         String deltaType = optString(delta, "type");
         if (deltaType == null) {
-            return ParsedEvent.empty();
+            return usage == null ? ParsedEvent.empty() : ParsedEvent.usage(usage);
         }
 
         return switch (deltaType) {
-            case "text_delta" -> ParsedEvent.content(optString(delta, "text"));
-            case "thinking_delta" -> ParsedEvent.thinking(optString(delta, "thinking"));
-            default -> ParsedEvent.empty();
+            case "text_delta" -> ParsedEvent.content(optString(delta, "text"), usage);
+            case "thinking_delta" -> ParsedEvent.thinking(optString(delta, "thinking"), usage);
+            default -> usage == null ? ParsedEvent.empty() : ParsedEvent.usage(usage);
         };
+    }
+
+    private static JsonObject extractUsage(JsonObject obj) {
+        JsonElement usage = obj == null ? null : obj.get("usage");
+        return usage != null && usage.isJsonObject() ? usage.getAsJsonObject() : null;
     }
 
     private static String optString(JsonObject obj, String key) {
@@ -96,26 +103,31 @@ public final class AnthropicStyleSseParser {
         return obj.get(key).getAsString();
     }
 
-    public record ParsedEvent(String content, String reasoning, boolean completed, boolean isError, String errorMessage) {
+    public record ParsedEvent(String content, String reasoning, boolean completed, boolean isError, String errorMessage,
+                              JsonObject usage) {
 
         public static ParsedEvent empty() {
-            return new ParsedEvent(null, null, false, false, null);
+            return new ParsedEvent(null, null, false, false, null, null);
         }
 
         public static ParsedEvent done() {
-            return new ParsedEvent(null, null, true, false, null);
+            return new ParsedEvent(null, null, true, false, null, null);
         }
 
         public static ParsedEvent error(String message) {
-            return new ParsedEvent(null, null, false, true, message);
+            return new ParsedEvent(null, null, false, true, message, null);
         }
 
-        public static ParsedEvent content(String text) {
-            return new ParsedEvent(text, null, false, false, null);
+        public static ParsedEvent content(String text, JsonObject usage) {
+            return new ParsedEvent(text, null, false, false, null, usage);
         }
 
-        public static ParsedEvent thinking(String text) {
-            return new ParsedEvent(null, text, false, false, null);
+        public static ParsedEvent thinking(String text, JsonObject usage) {
+            return new ParsedEvent(null, text, false, false, null, usage);
+        }
+
+        public static ParsedEvent usage(JsonObject usage) {
+            return new ParsedEvent(null, null, false, false, null, usage);
         }
 
         public boolean hasContent() {
@@ -124,6 +136,10 @@ public final class AnthropicStyleSseParser {
 
         public boolean hasReasoning() {
             return reasoning != null && !reasoning.isEmpty();
+        }
+
+        public boolean hasUsage() {
+            return usage != null;
         }
     }
 }

@@ -23,6 +23,7 @@ import com.nageoffer.ai.ragent.rag.config.MemoryProperties;
 import com.nageoffer.ai.ragent.rag.controller.vo.ConversationMessageVO;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.rag.enums.ConversationMessageOrder;
+import com.nageoffer.ai.ragent.infra.token.TokenCounterService;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.ConversationService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationCreateBO;
@@ -66,6 +67,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
 
     /** 记忆相关配置属性，包含历史保留轮次数等参数 */
     private final MemoryProperties memoryProperties;
+    private final TokenCounterService tokenCounterService;
 
     /**
      * 构造方法，注入所需的服务和配置。
@@ -77,10 +79,12 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
 
     public JdbcConversationMemoryStore(ConversationService conversationService,
                                        ConversationMessageService conversationMessageService,
-                                       MemoryProperties memoryProperties) {
+                                       MemoryProperties memoryProperties,
+                                       TokenCounterService tokenCounterService) {
         this.conversationService = conversationService;
         this.conversationMessageService = conversationMessageService;
         this.memoryProperties = memoryProperties;
+        this.tokenCounterService = tokenCounterService;
     }
 
     /**
@@ -122,8 +126,8 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 .filter(this::isHistoryMessage)
                 .collect(Collectors.toList());
 
-        // 规范化：确保以 USER 消息开头，截掉开头可能存在的孤立 ASSISTANT 消息
-        return normalizeHistory(result);
+        // 规范化并按 Token 预算裁剪：大上下文模型下尽量保留原文，仅在超过预算时裁剪更早消息
+        return trimToTokenBudget(normalizeHistory(result));
     }
 
     /**
@@ -216,6 +220,39 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
             return List.of();
         }
         return messages.subList(start, messages.size());
+    }
+
+    private List<ChatMessage> trimToTokenBudget(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        int budget = memoryProperties.getHistoryTokenBudget() == null
+                ? 0
+                : memoryProperties.getHistoryTokenBudget();
+        if (budget <= 0) {
+            return messages;
+        }
+
+        int total = 0;
+        List<ChatMessage> retained = new java.util.LinkedList<>();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            ChatMessage message = messages.get(i);
+            int tokens = estimateMessageTokens(message);
+            if (!retained.isEmpty() && total + tokens > budget) {
+                break;
+            }
+            retained.add(0, message);
+            total += tokens;
+        }
+        return normalizeHistory(retained);
+    }
+
+    private int estimateMessageTokens(ChatMessage message) {
+        if (message == null) {
+            return 0;
+        }
+        Integer tokens = tokenCounterService.countTokens(message.getContent());
+        return (tokens == null ? 0 : tokens) + 4;
     }
 
     /**

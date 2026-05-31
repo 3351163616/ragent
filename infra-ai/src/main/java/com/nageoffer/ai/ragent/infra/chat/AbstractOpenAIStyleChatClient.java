@@ -20,6 +20,7 @@ package com.nageoffer.ai.ragent.infra.chat;
 import cn.hutool.core.collection.CollUtil;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
@@ -48,6 +49,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -202,6 +204,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
         String rawBody = null;
         StringBuilder contentBuilder = new StringBuilder();
         StringBuilder reasoningBuilder = new StringBuilder();
+        JsonElement usage = null;
         int eventCount = 0;
         boolean completed = false;
         Throwable error = null;
@@ -240,6 +243,9 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                         contentBuilder.append(event.content());
                         callback.onContent(event.content());
                     }
+                    if (event.hasUsage()) {
+                        usage = event.usage();
+                    }
                     if (event.completed()) {
                         callback.onComplete();
                         completed = true;
@@ -270,6 +276,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
                     responseHeaders,
                     contentBuilder.toString(),
                     reasoningBuilder.toString(),
+                    usage,
                     eventCount,
                     completed,
                     cancelled.get(),
@@ -289,6 +296,15 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
         }
 
         body.add("messages", buildMessages(request));
+        AIModelProperties.ProviderConfig providerConfig = target == null ? null : target.provider();
+        if (Boolean.TRUE.equals(providerConfig == null ? null : providerConfig.getPromptCacheKeyEnabled())) {
+            body.addProperty("prompt_cache_key", buildPromptCacheKey(request, target));
+        }
+        if (stream && Boolean.TRUE.equals(providerConfig == null ? null : providerConfig.getStreamUsageEnabled())) {
+            JsonObject streamOptions = new JsonObject();
+            streamOptions.addProperty("include_usage", true);
+            body.add("stream_options", streamOptions);
+        }
 
         if (request.getTemperature() != null) {
             body.addProperty("temperature", request.getTemperature());
@@ -305,6 +321,14 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
 
         customizeRequestBody(body, request, target);
         return body;
+    }
+
+    private String buildPromptCacheKey(ChatRequest request, ModelTarget target) {
+        String scene = request == null || request.getScene() == null || request.getScene().isBlank()
+                ? "unknown"
+                : request.getScene().trim();
+        String model = target == null ? "unknown" : Objects.toString(target.id(), "unknown");
+        return scene + ":" + model;
     }
 
     private JsonArray buildMessages(ChatRequest request) {

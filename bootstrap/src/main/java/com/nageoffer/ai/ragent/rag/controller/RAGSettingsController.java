@@ -146,8 +146,13 @@ public class RAGSettingsController {
     private MemorySettings toMemorySettings(MemoryProperties props) {
         return MemorySettings.builder()
                 .historyKeepTurns(props.getHistoryKeepTurns())
+                .historyTokenBudget(props.getHistoryTokenBudget())
                 .summaryEnabled(props.getSummaryEnabled())
                 .summaryStartTurns(props.getSummaryStartTurns())
+                .summaryTriggerTokenThreshold(props.getSummaryTriggerTokenThreshold())
+                .summaryTriggerContextRatio(props.getSummaryTriggerContextRatio())
+                .summaryMinTokenThreshold(props.getSummaryMinTokenThreshold())
+                .summaryDebounceSeconds(props.getSummaryDebounceSeconds())
                 .summaryMaxChars(props.getSummaryMaxChars())
                 .titleMaxLength(props.getTitleMaxLength())
                 .build();
@@ -162,6 +167,8 @@ public class RAGSettingsController {
                     .format(v.getFormat())
                     .thinkingParameter(v.getThinkingParameter())
                     .reasoningEffort(v.getReasoningEffort())
+                    .promptCacheKeyEnabled(v.getPromptCacheKeyEnabled())
+                    .streamUsageEnabled(v.getStreamUsageEnabled())
                     .endpoints(v.getEndpoints())
                     .build()));
         }

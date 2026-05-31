@@ -98,6 +98,8 @@ public class SystemSettingsVO {
             private String format;
             private String thinkingParameter;
             private String reasoningEffort;
+            private Boolean promptCacheKeyEnabled;
+            private Boolean streamUsageEnabled;
             private Map<String, String> endpoints;
         }
 
@@ -149,8 +151,13 @@ public class SystemSettingsVO {
     @Builder
     public static class MemorySettings {
         private Integer historyKeepTurns;
+        private Integer historyTokenBudget;
         private Boolean summaryEnabled;
         private Integer summaryStartTurns;
+        private Integer summaryTriggerTokenThreshold;
+        private Double summaryTriggerContextRatio;
+        private Integer summaryMinTokenThreshold;
+        private Integer summaryDebounceSeconds;
         private Integer summaryMaxChars;
         private Integer titleMaxLength;
     }

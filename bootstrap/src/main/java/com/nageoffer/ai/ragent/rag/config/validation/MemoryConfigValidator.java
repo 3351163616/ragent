@@ -35,17 +35,17 @@ public class MemoryConfigValidator implements ConstraintValidator<ValidMemoryCon
 
         // 如果启用了摘要功能，需要校验配置的合理性
         if (Boolean.TRUE.equals(config.getSummaryEnabled())) {
-            Integer summaryStartTurns = config.getSummaryStartTurns();
-            Integer historyKeepTurns = config.getHistoryKeepTurns();
+            Integer minTokenThreshold = config.getSummaryMinTokenThreshold();
+            Integer triggerTokenThreshold = config.getSummaryTriggerTokenThreshold();
 
-            // 摘要触发轮数必须大于保留轮数
-            if (summaryStartTurns <= historyKeepTurns) {
+            if (minTokenThreshold != null
+                    && triggerTokenThreshold != null
+                    && minTokenThreshold > triggerTokenThreshold) {
                 context.disableDefaultConstraintViolation();
                 context.buildConstraintViolationWithTemplate(
                         String.format(
-                                "当启用摘要功能时，summaryStartTurns (%d) 必须大于 historyKeepTurns (%d)，" +
-                                        "否则永远不会触发摘要。建议配置至少：summaryStartTurns = historyKeepTurns + 1",
-                                summaryStartTurns, historyKeepTurns
+                                "当启用摘要功能时，summaryMinTokenThreshold (%d) 不能大于 summaryTriggerTokenThreshold (%d)",
+                                minTokenThreshold, triggerTokenThreshold
                         )
                 ).addConstraintViolation();
                 return false;

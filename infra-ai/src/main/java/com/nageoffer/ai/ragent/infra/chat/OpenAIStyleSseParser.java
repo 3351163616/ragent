@@ -47,9 +47,10 @@ public final class OpenAIStyleSseParser {
         }
 
         JsonObject obj = gson.fromJson(payload, JsonObject.class);
+        JsonObject usage = extractUsage(obj);
         JsonArray choices = obj.getAsJsonArray("choices");
         if (choices == null || choices.isEmpty()) {
-            return ParsedEvent.empty();
+            return usage == null ? ParsedEvent.empty() : ParsedEvent.usage(usage);
         }
 
         JsonObject choice0 = choices.get(0).getAsJsonObject();
@@ -57,7 +58,14 @@ public final class OpenAIStyleSseParser {
         String reasoning = reasoningEnabled ? extractText(choice0, "reasoning_content") : null;
         boolean completed = hasFinishReason(choice0);
 
-        return new ParsedEvent(content, reasoning, completed);
+        return new ParsedEvent(content, reasoning, completed, usage);
+    }
+
+    private static JsonObject extractUsage(JsonObject obj) {
+        if (obj == null || !obj.has("usage") || !obj.get("usage").isJsonObject()) {
+            return null;
+        }
+        return obj.getAsJsonObject("usage");
     }
 
     private static boolean hasFinishReason(JsonObject choice) {
@@ -93,14 +101,18 @@ public final class OpenAIStyleSseParser {
         return null;
     }
 
-    record ParsedEvent(String content, String reasoning, boolean completed) {
+    record ParsedEvent(String content, String reasoning, boolean completed, JsonObject usage) {
 
         static ParsedEvent empty() {
-            return new ParsedEvent(null, null, false);
+            return new ParsedEvent(null, null, false, null);
         }
 
         static ParsedEvent done() {
-            return new ParsedEvent(null, null, true);
+            return new ParsedEvent(null, null, true, null);
+        }
+
+        static ParsedEvent usage(JsonObject usage) {
+            return new ParsedEvent(null, null, false, usage);
         }
 
         boolean hasContent() {
@@ -109,6 +121,10 @@ public final class OpenAIStyleSseParser {
 
         boolean hasReasoning() {
             return reasoning != null && !reasoning.isEmpty();
+        }
+
+        boolean hasUsage() {
+            return usage != null;
         }
     }
 }

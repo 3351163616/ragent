@@ -80,14 +80,23 @@ public class RAGPromptService {
     public String buildSystemPrompt(PromptContext context) {
         // 执行场景判定，获取决策方案（含场景类型和可能的自定义模板）
         PromptBuildPlan plan = plan(context);
-        // 优先使用意图节点自带的 Prompt 模板，否则回退到对应场景的默认模板
-        String template = StrUtil.isNotBlank(plan.getBaseTemplate())
-                ? plan.getBaseTemplate()
-                : defaultTemplate(plan.getScene());
+        String template = resolveTemplate(plan);
         if (StrUtil.isBlank(template)) {
             return "";
         }
         return PromptTemplateUtils.cleanupPrompt(template + citationService.buildPromptInstruction());
+    }
+
+    private String resolveTemplate(PromptBuildPlan plan) {
+        String sceneTemplate = defaultTemplate(plan.getScene());
+        String customTemplate = StrUtil.emptyIfNull(plan.getBaseTemplate()).trim();
+        if (StrUtil.isBlank(sceneTemplate)) {
+            return customTemplate;
+        }
+        if (StrUtil.isBlank(customTemplate)) {
+            return sceneTemplate;
+        }
+        return sceneTemplate + "\n\n# 场景补充规则\n" + customTemplate;
     }
 
     /**

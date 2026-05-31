@@ -180,6 +180,16 @@ public class AIModelProperties {
         private String thinkingParameter = "enable_thinking";
 
         /**
+         * OpenAI 兼容协议下是否透传 prompt_cache_key，用于支持代理或厂商的前缀缓存路由。
+         */
+        private Boolean promptCacheKeyEnabled = false;
+
+        /**
+         * OpenAI 兼容协议下流式请求是否带 stream_options.include_usage。
+         */
+        private Boolean streamUsageEnabled = false;
+
+        /**
          * thinkingParameter=reasoning_effort 时发送的努力程度
          */
         private String reasoningEffort = "medium";

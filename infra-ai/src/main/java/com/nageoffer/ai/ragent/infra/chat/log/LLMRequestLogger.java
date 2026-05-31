@@ -139,6 +139,7 @@ public class LLMRequestLogger {
                                       Headers headers,
                                       String content,
                                       String reasoning,
+                                      JsonElement usage,
                                       int eventCount,
                                       boolean completed,
                                       boolean cancelled,
@@ -162,6 +163,15 @@ public class LLMRequestLogger {
         response.put("type", "stream");
         putCommonResponseFields(response, statusCode, headers, error);
         response.put("body", body);
+        if (usage != null) {
+            response.put("usage", usage);
+            log.info(
+                    "LLM 流式响应 Token 用量: requestId={}, modelId={}, usage={}",
+                    context.logRecord.get("requestId"),
+                    context.logRecord.get("modelId"),
+                    compactGson.toJson(usage)
+            );
+        }
         writeResponse(context, response);
     }
 

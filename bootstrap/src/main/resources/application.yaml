@@ -90,10 +90,15 @@ rag:
       poll-interval-ms: 200
 
   memory:
-    history-keep-turns: 4
-    summary-start-turns: 5
+    history-keep-turns: 100
+    history-token-budget: 80000
+    summary-start-turns: 20
     summary-enabled: true
-    summary-max-chars: 200
+    summary-trigger-token-threshold: 200000
+    summary-trigger-context-ratio: 0.7
+    summary-min-token-threshold: 20000
+    summary-debounce-seconds: 60
+    summary-max-chars: 800
     title-max-length: 30
 
   semaphore:
@@ -260,14 +265,14 @@ ai:
         provider: newapi
         model: deepseek-v4-pro
         supports-thinking: true
-        max-context-tokens: 200000
+        max-context-tokens: 1000000
         thinking-parameter: thinking
         priority: 0
       - id: deepseek-v4-flash
         provider: newapi
         model: deepseek-v4-flash
         supports-thinking: true
-        max-context-tokens: 200000
+        max-context-tokens: 1000000
         thinking-parameter: thinking
         priority: 1
       - id: qwen3.6-plus
