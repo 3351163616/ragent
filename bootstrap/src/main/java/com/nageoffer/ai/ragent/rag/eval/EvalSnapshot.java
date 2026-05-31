@@ -17,26 +17,45 @@
 
 package com.nageoffer.ai.ragent.rag.eval;
 
-import com.nageoffer.ai.ragent.framework.convention.Result;
-import com.nageoffer.ai.ragent.framework.web.Results;
-import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.List;
 
 /**
- * 效果评测接口
+ * 单次评测执行快照，保存改写、意图、检索、MCP 与 Trace 结果。
  */
-@RestController
-@RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "app.eval", name = "enabled", havingValue = "true")
-public class EvalController {
+@Data
+@Builder
+public class EvalSnapshot {
 
-    private final EvalRagRunner evalRagRunner;
+    private String originalQuestion;
 
-    @GetMapping("/rag/eval")
-    public Result<EvalResponse> chat(@RequestParam String question) {
-        return Results.success(EvalResponse.fromSnapshot(evalRagRunner.run(question)));
-    }
+    private String rewrittenQuestion;
+
+    private List<String> subQuestions;
+
+    private List<String> intentLeafIds;
+
+    private List<String> retrievedDocIds;
+
+    private List<String> retrievedChunkIds;
+
+    private List<String> retrievedContexts;
+
+    private List<String> retrievedContextDocIds;
+
+    private String mcpContext;
+
+    private List<String> mcpToolIds;
+
+    private boolean hasMcp;
+
+    private boolean hasKb;
+
+    private String answer;
+
+    private String traceId;
+
+    private long latencyMs;
 }

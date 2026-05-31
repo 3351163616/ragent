@@ -17,26 +17,34 @@
 
 package com.nageoffer.ai.ragent.rag.eval;
 
-import com.nageoffer.ai.ragent.framework.convention.Result;
-import com.nageoffer.ai.ragent.framework.web.Results;
-import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
 
 /**
- * 效果评测接口
+ * 评测用例标准答案，存储为 t_eval_case.ground_truth JSON。
  */
-@RestController
-@RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "app.eval", name = "enabled", havingValue = "true")
-public class EvalController {
+@Data
+public class EvalGroundTruth {
 
-    private final EvalRagRunner evalRagRunner;
+    private List<String> referenceDocIds;
 
-    @GetMapping("/rag/eval")
-    public Result<EvalResponse> chat(@RequestParam String question) {
-        return Results.success(EvalResponse.fromSnapshot(evalRagRunner.run(question)));
+    private List<String> expectedIntentLeafIds;
+
+    private ExpectedTool expectedTool;
+
+    private List<String> requiredFacts;
+
+    private List<String> forbiddenClaims;
+
+    private String expectedAnswer;
+
+    @Data
+    public static class ExpectedTool {
+
+        private String name;
+
+        private Map<String, Object> args;
     }
 }

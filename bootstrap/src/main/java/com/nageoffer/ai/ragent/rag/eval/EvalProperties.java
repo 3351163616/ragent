@@ -39,4 +39,28 @@ public class EvalProperties {
      * true：注册评测接口和切面，用于评测项目调用
      */
     private boolean enabled = false;
+
+    /**
+     * 批量评测执行配置。
+     */
+    private Execution execution = new Execution();
+
+    @Data
+    public static class Execution {
+
+        /**
+         * 单个评测任务内最多同时执行多少个 trial，避免压垮模型、向量库和 MCP。
+         */
+        private int maxConcurrency = 1;
+
+        /**
+         * 未指定 trialCount 时的默认执行次数。
+         */
+        private int defaultTrialCount = 5;
+
+        /**
+         * 单次 trial 的建议超时时间；第一版用于运行记录和后续接入取消能力。
+         */
+        private int timeoutSeconds = 120;
+    }
 }

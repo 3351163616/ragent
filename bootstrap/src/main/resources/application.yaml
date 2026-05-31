@@ -348,6 +348,10 @@ app:
   demo-mode: false
   eval:
     enabled: true
+    execution:
+      max-concurrency: 2
+      default-trial-count: 5
+      timeout-seconds: 120
 
 logging:
   level:

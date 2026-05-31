@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ClipboardCheck,
   ClipboardList,
   Database,
   GitBranch,
@@ -136,6 +137,11 @@ const menuGroups: MenuGroup[] = [
         label: "链路追踪",
         icon: Workflow
       },
+      {
+        path: "/admin/eval",
+        label: "评估中心",
+        icon: ClipboardCheck
+      }
     ]
   },
   {
@@ -167,6 +173,7 @@ const breadcrumbMap: Record<string, string> = {
   "intent-list": "意图列表",
   ingestion: "数据通道",
   traces: "链路追踪",
+  eval: "评估中心",
   "sample-questions": "示例问题",
   mappings: "关键词映射",
   "config-bootstrap": "系统初始化",

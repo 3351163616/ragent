@@ -80,4 +80,22 @@ public class EvalResponse {
      * 总耗时（毫秒）
      */
     private long latencyMs;
+
+    public static EvalResponse fromSnapshot(EvalSnapshot snapshot) {
+        if (snapshot == null) {
+            return EvalResponse.builder().build();
+        }
+        return EvalResponse.builder()
+                .retrievedDocIds(snapshot.getRetrievedDocIds())
+                .retrievedChunkIds(snapshot.getRetrievedChunkIds())
+                .retrievedContexts(snapshot.getRetrievedContexts())
+                .retrievedContextDocIds(snapshot.getRetrievedContextDocIds())
+                .mcpContext(snapshot.getMcpContext())
+                .hasMcp(snapshot.isHasMcp())
+                .hasKb(snapshot.isHasKb())
+                .subIntents(snapshot.getSubQuestions())
+                .intentLeafIds(snapshot.getIntentLeafIds())
+                .latencyMs(snapshot.getLatencyMs())
+                .build();
+    }
 }

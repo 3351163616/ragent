@@ -17,26 +17,25 @@
 
 package com.nageoffer.ai.ragent.rag.eval;
 
-import com.nageoffer.ai.ragent.framework.convention.Result;
-import com.nageoffer.ai.ragent.framework.web.Results;
-import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.Map;
 
 /**
- * 效果评测接口
+ * 单项自动阅卷结果。
  */
-@RestController
-@RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "app.eval", name = "enabled", havingValue = "true")
-public class EvalController {
+@Data
+@Builder
+public class EvalMetricResult {
 
-    private final EvalRagRunner evalRagRunner;
+    private String metricName;
 
-    @GetMapping("/rag/eval")
-    public Result<EvalResponse> chat(@RequestParam String question) {
-        return Results.success(EvalResponse.fromSnapshot(evalRagRunner.run(question)));
-    }
+    private double score;
+
+    private boolean passed;
+
+    private String reason;
+
+    private Map<String, Object> detail;
 }

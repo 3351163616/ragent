@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.rag.config;
 
 import cn.hutool.core.thread.ThreadFactoryBuilder;
 import com.alibaba.ttl.threadpool.TtlExecutors;
+import com.nageoffer.ai.ragent.rag.eval.EvalProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -248,6 +249,27 @@ public class ThreadPoolExecutorConfig {
                         .build(),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
+        return TtlExecutors.getTtlExecutor(executor);
+    }
+
+    /**
+     * 自动化评测 trial 执行线程池，默认低并发，避免批量评测抢占线上资源。
+     */
+    @Bean
+    public Executor evalExecutionExecutor(EvalProperties evalProperties) {
+        int size = Math.max(1, evalProperties.getExecution().getMaxConcurrency());
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                size,
+                size,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(200),
+                ThreadFactoryBuilder.create()
+                        .setNamePrefix("eval_execution_executor_")
+                        .build(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        executor.allowCoreThreadTimeOut(true);
         return TtlExecutors.getTtlExecutor(executor);
     }
 }
