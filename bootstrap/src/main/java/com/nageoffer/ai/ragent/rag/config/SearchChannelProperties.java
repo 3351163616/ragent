@@ -21,6 +21,10 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * RAG 检索配置
  */
@@ -40,6 +44,16 @@ public class SearchChannelProperties {
     private Channels channels = new Channels();
 
     /**
+     * 全局检索过滤配置
+     */
+    private Filters filters = new Filters();
+
+    /**
+     * 多通道融合配置
+     */
+    private Fusion fusion = new Fusion();
+
+    /**
      * Rerank 后处理配置
      */
     private Rerank rerank = new Rerank();
@@ -56,6 +70,11 @@ public class SearchChannelProperties {
          * 意图定向检索配置
          */
         private IntentDirected intentDirected = new IntentDirected();
+
+        /**
+         * 关键词/BM25 检索配置
+         */
+        private KeywordEs keywordEs = new KeywordEs();
     }
 
     @Data
@@ -109,6 +128,118 @@ public class SearchChannelProperties {
          * TopK 倍数
          */
         private int topKMultiplier = 2;
+    }
+
+    @Data
+    public static class KeywordEs {
+
+        /**
+         * 是否启用
+         */
+        private boolean enabled = true;
+
+        /**
+         * TopK 倍数。关键词召回会先多取候选，再交给 Fusion/Rerank。
+         */
+        private int topKMultiplier = 3;
+
+        /**
+         * 关键词检索最低分数。
+         */
+        private double minScore = 0.05;
+
+        /**
+         * PostgreSQL 全文检索配置，默认 simple，适合代码、错误码、接口名等精确词。
+         */
+        private String textSearchConfig = "simple";
+
+        /**
+         * 从 query 中抽取的精确匹配词最大数量。
+         */
+        private int maxQueryTerms = 8;
+
+        /**
+         * 整句短语命中的加分。
+         */
+        private double exactPhraseBoost = 0.35;
+
+        /**
+         * 文档标题/名称命中的加分。
+         */
+        private double titleBoost = 0.25;
+
+        /**
+         * 单个 query term 命中的加分。
+         */
+        private double termBoost = 0.08;
+    }
+
+    @Data
+    public static class Filters {
+
+        /**
+         * 是否启用全局过滤上下文。
+         */
+        private boolean enabled = true;
+
+        /**
+         * 仅召回启用状态的知识库文档和 Chunk。
+         */
+        private boolean enabledOnly = true;
+
+        /**
+         * 仅召回入库成功的文档。
+         */
+        private boolean successStatusOnly = true;
+
+        /**
+         * 是否按创建人隔离知识库/文档。默认关闭，避免破坏现有无权限模型部署。
+         */
+        private boolean userOwnedOnly = false;
+
+        /**
+         * 管理员是否绕过 userOwnedOnly。
+         */
+        private boolean adminBypassUserOwned = true;
+
+        /**
+         * 固定允许检索的知识库 ID。为空表示不限制。
+         */
+        private List<String> allowedKbIds = List.of();
+
+        /**
+         * 固定允许检索的文档 ID。为空表示不限制。
+         */
+        private List<String> allowedDocIds = List.of();
+
+        /**
+         * 只召回最近 N 天更新的文档；<=0 表示不限制。
+         */
+        private int recentDays = 0;
+    }
+
+    @Data
+    public static class Fusion {
+
+        /**
+         * 是否启用 RRF 融合。
+         */
+        private boolean enabled = true;
+
+        /**
+         * Reciprocal Rank Fusion 参数 k，值越大越平滑。
+         */
+        private int rrfK = 60;
+
+        /**
+         * Rerank 前最多保留多少融合候选；<=0 表示不截断。
+         */
+        private int maxCandidatesBeforeRerank = 50;
+
+        /**
+         * 通道权重，key 支持 intent-directed / keyword-es / vector-global / hybrid。
+         */
+        private Map<String, Double> channelWeights = new HashMap<>();
     }
 
     @Data

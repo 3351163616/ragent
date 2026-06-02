@@ -30,6 +30,7 @@ import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeChunkMapper;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeDocumentMapper;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.RetrievalFilterContext;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.data.BaseVector;
@@ -102,7 +103,38 @@ public class MilvusRetrieverService implements RetrieverService {
                 .map(this::toRetrievedChunk)
                 .collect(Collectors.toList());
         enrichSources(chunks, retrieveParam.getCollectionName());
-        return chunks;
+        return applyFilterContext(chunks, retrieveParam.getFilterContext());
+    }
+
+    private List<RetrievedChunk> applyFilterContext(List<RetrievedChunk> chunks, RetrievalFilterContext filterContext) {
+        if (chunks == null || chunks.isEmpty() || filterContext == null) {
+            return chunks == null ? List.of() : chunks;
+        }
+        return chunks.stream()
+                .filter(chunk -> filterContext.getAllowedKbIds().isEmpty() || filterContext.getAllowedKbIds().contains(chunk.getKbId()))
+                .filter(chunk -> filterContext.getAllowedDocIds().isEmpty() || filterContext.getAllowedDocIds().contains(chunk.getDocId()))
+                .filter(chunk -> !filterContext.isEnabledOnly()
+                        || asInteger(metadataValue(chunk, "doc_enabled"), 1) == 1
+                        && asInteger(metadataValue(chunk, "chunk_enabled"), 1) == 1)
+                .filter(chunk -> !filterContext.isSuccessStatusOnly()
+                        || "success".equalsIgnoreCase(Objects.toString(metadataValue(chunk, "doc_status"), "success")))
+                .filter(chunk -> !filterContext.shouldApplyUserOwnedFilter()
+                        || Objects.equals(resolveOwner(chunk), resolveFilterOwner(filterContext)))
+                .toList();
+    }
+
+    private String resolveOwner(RetrievedChunk chunk) {
+        if (chunk.getMetadata() == null) {
+            return null;
+        }
+        Object owner = chunk.getMetadata().get("created_by");
+        return owner == null ? null : Objects.toString(owner);
+    }
+
+    private String resolveFilterOwner(RetrievalFilterContext filterContext) {
+        return StrUtil.isNotBlank(filterContext.getUsername())
+                ? filterContext.getUsername()
+                : filterContext.getUserId();
     }
 
     private RetrievedChunk toRetrievedChunk(SearchResp.SearchResult result) {
@@ -206,10 +238,17 @@ public class MilvusRetrieverService implements RetrieverService {
                 chunk.setDocName(doc.getDocName());
                 chunk.setKbId(doc.getKbId());
                 chunk.setSourceUrl(resolveSourceUrl(doc.getSourceLocation(), doc.getFileUrl()));
+                chunk.getMetadata().put("doc_enabled", doc.getEnabled());
+                chunk.getMetadata().put("doc_status", doc.getStatus());
+                chunk.getMetadata().put("doc_updated_at", doc.getUpdateTime());
+                chunk.getMetadata().put("created_by", doc.getCreatedBy());
             }
             KnowledgeChunkDO knowledgeChunk = chunksById.get(chunk.getId());
             if (knowledgeChunk != null && chunk.getChunkIndex() == null) {
                 chunk.setChunkIndex(knowledgeChunk.getChunkIndex());
+            }
+            if (knowledgeChunk != null) {
+                chunk.getMetadata().put("chunk_enabled", knowledgeChunk.getEnabled());
             }
             KnowledgeBaseDO kb = StrUtil.isNotBlank(chunk.getKbId()) ? kbById.get(chunk.getKbId()) : kbByCollection;
             if (kb != null) {
@@ -229,6 +268,15 @@ public class MilvusRetrieverService implements RetrieverService {
 
     private String asString(Object value) {
         return value == null ? null : Objects.toString(value, null);
+    }
+
+    private Object metadataValue(RetrievedChunk chunk, String key) {
+        return chunk.getMetadata() == null ? null : chunk.getMetadata().get(key);
+    }
+
+    private Integer asInteger(Object value, int defaultValue) {
+        Integer parsed = asInteger(value);
+        return parsed == null ? defaultValue : parsed;
     }
 
     private Integer asInteger(Object value) {

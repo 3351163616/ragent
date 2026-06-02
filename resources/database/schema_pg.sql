@@ -154,6 +154,9 @@ CREATE TABLE t_knowledge_document (
     deleted          SMALLINT      NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_kb_id ON t_knowledge_document (kb_id);
+CREATE INDEX idx_knowledge_document_kb_status_enabled_deleted ON t_knowledge_document (kb_id, status, enabled, deleted);
+CREATE INDEX idx_knowledge_document_update_time ON t_knowledge_document (update_time);
+CREATE INDEX idx_knowledge_document_doc_name_fts ON t_knowledge_document USING gin (to_tsvector('simple', coalesce(doc_name, '')));
 COMMENT ON TABLE t_knowledge_document IS '知识库文档表';
 
 CREATE TABLE t_knowledge_chunk (
@@ -173,6 +176,9 @@ CREATE TABLE t_knowledge_chunk (
     deleted      SMALLINT    NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_doc_id ON t_knowledge_chunk (doc_id);
+CREATE INDEX idx_knowledge_chunk_kb_enabled_deleted ON t_knowledge_chunk (kb_id, enabled, deleted);
+CREATE INDEX idx_knowledge_chunk_doc_enabled_deleted ON t_knowledge_chunk (doc_id, enabled, deleted);
+CREATE INDEX idx_knowledge_chunk_content_fts ON t_knowledge_chunk USING gin (to_tsvector('simple', coalesce(content, '')));
 COMMENT ON TABLE t_knowledge_chunk IS '知识库文档分块表';
 
 CREATE TABLE t_knowledge_document_chunk_log (

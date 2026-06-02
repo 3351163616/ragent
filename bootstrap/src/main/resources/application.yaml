@@ -123,12 +123,41 @@ rag:
   search:
     channels:
       vector-global:
+        enabled: true
         confidence-threshold: 0.6
+        single-intent-supplement-threshold: 0.8
         top-k-multiplier: 3
         min-score: 0.55
       intent-directed:
+        enabled: true
         min-intent-score: 0.4
         top-k-multiplier: 2
+      keyword-es:
+        enabled: true
+        top-k-multiplier: 3
+        min-score: 0.05
+        text-search-config: simple
+        max-query-terms: 8
+        exact-phrase-boost: 0.35
+        title-boost: 0.25
+        term-boost: 0.08
+    filters:
+      enabled: true
+      enabled-only: true
+      success-status-only: true
+      user-owned-only: false
+      admin-bypass-user-owned: true
+      allowed-kb-ids: []
+      allowed-doc-ids: []
+      recent-days: 0
+    fusion:
+      enabled: true
+      rrf-k: 60
+      max-candidates-before-rerank: 50
+      channel-weights:
+        intent-directed: 1.2
+        keyword-es: 1.1
+        vector-global: 1.0
     rerank:
       min-score: 0.2
 

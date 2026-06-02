@@ -68,6 +68,11 @@ public class SearchContext {
     private QueryEmbeddingContext queryEmbeddingContext;
 
     /**
+     * 全局过滤上下文。
+     */
+    private RetrievalFilterContext filterContext;
+
+    /**
      * 扩展元数据
      */
     @Builder.Default

@@ -26,6 +26,7 @@ import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.IntentDirectedSearchChannel;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.RetrievalFilterContextFactory;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchContext;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchTarget;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.VectorGlobalSearchChannel;
@@ -116,6 +117,7 @@ class QueryEmbeddingReuseTests {
                 List.of(intentChannel, globalChannel),
                 List.of(),
                 embeddingService,
+                new RetrievalFilterContextFactory(properties),
                 DIRECT_EXECUTOR
         );
         SubQuestionIntent intent = new SubQuestionIntent("如何办理入职", List.of(NodeScore.builder()

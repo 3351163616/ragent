@@ -100,7 +100,7 @@ public class VectorGlobalSearchChannel implements SearchChannel {
 
     @Override
     public List<SearchTarget> resolveSearchTargets(SearchContext context) {
-        return getAllKBTargets(context.getMainQuestion());
+        return getAllKBTargets(context);
     }
 
     @Override
@@ -143,7 +143,7 @@ public class VectorGlobalSearchChannel implements SearchChannel {
             return SearchChannelResult.builder()
                     .channelType(SearchChannelType.VECTOR_GLOBAL)
                     .channelName(getName())
-                    .chunks(filteredChunks)
+                    .chunks(annotate(filteredChunks))
                     .latencyMs(latency)
                     .build();
 
@@ -161,14 +161,14 @@ public class VectorGlobalSearchChannel implements SearchChannel {
     /**
      * 获取所有 KB 类型的 collection
      */
-    private List<SearchTarget> getAllKBTargets(String question) {
+    private List<SearchTarget> getAllKBTargets(SearchContext context) {
         // 从知识库表获取全量 collection（全局检索兜底）
-        List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
-                new QueryWrapper<KnowledgeBaseDO>()
-                        .select("id", "name", "collection_name", "embedding_model")
-                        .eq("deleted", 0)
-        );
+        QueryWrapper<KnowledgeBaseDO> queryWrapper = new QueryWrapper<KnowledgeBaseDO>()
+                .select("id", "name", "collection_name", "embedding_model")
+                .eq("deleted", 0);
+        List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(queryWrapper);
         return kbList.stream()
+                .filter(kb -> allowsKb(kb, context))
                 .filter(kb -> kb.getCollectionName() != null && !kb.getCollectionName().isBlank())
                 .collect(java.util.stream.Collectors.toMap(
                         KnowledgeBaseDO::getCollectionName,
@@ -178,13 +178,20 @@ public class VectorGlobalSearchChannel implements SearchChannel {
                                 .targetName(kb.getName())
                                 .collectionName(kb.getCollectionName())
                                 .embeddingModelId(kb.getEmbeddingModel())
-                                .query(question)
+                                .query(context.getMainQuestion())
                                 .build(),
                         (left, right) -> left
                 ))
                 .values()
                 .stream()
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    }
+
+    private boolean allowsKb(KnowledgeBaseDO kb, SearchContext context) {
+        if (context == null || context.getFilterContext() == null || !context.getFilterContext().hasKbScope()) {
+            return true;
+        }
+        return context.getFilterContext().getAllowedKbIds().contains(kb.getId());
     }
 
     /**
@@ -212,6 +219,19 @@ public class VectorGlobalSearchChannel implements SearchChannel {
                     minScore, chunks.size(), filtered.size());
         }
         return filtered;
+    }
+
+    private List<RetrievedChunk> annotate(List<RetrievedChunk> chunks) {
+        if (CollUtil.isEmpty(chunks)) {
+            return chunks;
+        }
+        chunks.forEach(chunk -> {
+            if (chunk.getMetadata() != null) {
+                chunk.getMetadata().put("channelType", SearchChannelType.VECTOR_GLOBAL.name());
+                chunk.getMetadata().put("channelName", getName());
+            }
+        });
+        return chunks;
     }
 
     @Override

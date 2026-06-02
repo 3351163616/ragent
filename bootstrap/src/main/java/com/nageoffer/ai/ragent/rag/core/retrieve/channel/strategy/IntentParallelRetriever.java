@@ -102,6 +102,14 @@ public class IntentParallelRetriever extends AbstractParallelRetriever<IntentPar
 
     @Override
     protected List<RetrievedChunk> createRetrievalTask(String question, IntentTask task, int ignoredTopK) {
+        return createRetrievalTask(null, question, task, ignoredTopK);
+    }
+
+    @Override
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context,
+                                                       String question,
+                                                       IntentTask task,
+                                                       int ignoredTopK) {
         NodeScore nodeScore = task.nodeScore();
         IntentNode node = nodeScore.getNode();
         try {
@@ -110,6 +118,7 @@ public class IntentParallelRetriever extends AbstractParallelRetriever<IntentPar
                             .collectionName(node.getCollectionName())
                             .query(question)
                             .topK(task.intentTopK())
+                            .filterContext(context == null ? null : context.getFilterContext())
                             .build()
             );
         } catch (Exception e) {
@@ -124,6 +133,15 @@ public class IntentParallelRetriever extends AbstractParallelRetriever<IntentPar
                                                        IntentTask task,
                                                        int ignoredTopK,
                                                        QueryEmbedding queryEmbedding) {
+        return createRetrievalTask(null, question, task, ignoredTopK, queryEmbedding);
+    }
+
+    @Override
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context,
+                                                       String question,
+                                                       IntentTask task,
+                                                       int ignoredTopK,
+                                                       QueryEmbedding queryEmbedding) {
         NodeScore nodeScore = task.nodeScore();
         IntentNode node = nodeScore.getNode();
         try {
@@ -133,6 +151,7 @@ public class IntentParallelRetriever extends AbstractParallelRetriever<IntentPar
                             .collectionName(node.getCollectionName())
                             .query(question)
                             .topK(task.intentTopK())
+                            .filterContext(context == null ? null : context.getFilterContext())
                             .build()
             );
         } catch (Exception e) {

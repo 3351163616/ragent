@@ -17,12 +17,16 @@
 
 package com.nageoffer.ai.ragent.infra.embedding;
 
+import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.infra.enums.ModelProvider;
+import com.nageoffer.ai.ragent.infra.model.ModelTarget;
 import okhttp3.OkHttpClient;
 import org.springframework.stereotype.Service;
 
 @Service
 public class SiliconFlowEmbeddingClient extends AbstractOpenAIStyleEmbeddingClient {
+
+    private static final String QWEN3_EMBEDDING_PREFIX = "Qwen/Qwen3-Embedding-";
 
     public SiliconFlowEmbeddingClient(OkHttpClient syncHttpClient) {
         super(syncHttpClient);
@@ -31,6 +35,15 @@ public class SiliconFlowEmbeddingClient extends AbstractOpenAIStyleEmbeddingClie
     @Override
     public String provider() {
         return ModelProvider.SILICON_FLOW.getId();
+    }
+
+    @Override
+    protected void customizeRequestBody(JsonObject body, ModelTarget target) {
+        super.customizeRequestBody(body, target);
+        String model = target == null || target.candidate() == null ? null : target.candidate().getModel();
+        if (model == null || !model.startsWith(QWEN3_EMBEDDING_PREFIX)) {
+            body.remove("dimensions");
+        }
     }
 
     @Override

@@ -155,7 +155,7 @@ public class IntentDirectedSearchChannel implements SearchChannel {
             return SearchChannelResult.builder()
                     .channelType(SearchChannelType.INTENT_DIRECTED)
                     .channelName(getName())
-                    .chunks(allChunks)
+                    .chunks(annotate(allChunks))
                     .latencyMs(latency)
                     .metadata(Map.of("intentCount", kbIntents.size()))
                     .build();
@@ -174,6 +174,19 @@ public class IntentDirectedSearchChannel implements SearchChannel {
     @Override
     public SearchChannelType getType() {
         return SearchChannelType.INTENT_DIRECTED;
+    }
+
+    private List<RetrievedChunk> annotate(List<RetrievedChunk> chunks) {
+        if (CollUtil.isEmpty(chunks)) {
+            return chunks;
+        }
+        chunks.forEach(chunk -> {
+            if (chunk.getMetadata() != null) {
+                chunk.getMetadata().put("channelType", SearchChannelType.INTENT_DIRECTED.name());
+                chunk.getMetadata().put("channelName", getName());
+            }
+        });
+        return chunks;
     }
 
     /**

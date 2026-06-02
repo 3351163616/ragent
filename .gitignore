@@ -22,6 +22,7 @@ temp
 *.iws
 *.iml
 *.ipr
+.run/
 
 ### NetBeans ###
 /nbproject/private/

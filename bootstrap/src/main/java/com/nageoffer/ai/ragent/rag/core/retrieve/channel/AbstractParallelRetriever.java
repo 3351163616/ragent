@@ -91,7 +91,7 @@ public abstract class AbstractParallelRetriever<T> {
         List<RetrievalFuture<T>> futures = targets.stream()
                 .map(target -> {
                     CompletableFuture<List<RetrievedChunk>> future = CompletableFuture.supplyAsync(
-                            () -> createRetrievalTask(context, question, target, topK),
+                            () -> createRetrievalTaskWithContext(context, question, target, topK),
                             executor
                     );
                     return new RetrievalFuture<>(target, future);
@@ -121,12 +121,12 @@ public abstract class AbstractParallelRetriever<T> {
         return allChunks;
     }
 
-    private List<RetrievedChunk> createRetrievalTask(SearchContext context, String question, T target, int topK) {
+    private List<RetrievedChunk> createRetrievalTaskWithContext(SearchContext context, String question, T target, int topK) {
         QueryEmbedding queryEmbedding = resolveQueryEmbedding(context, question, target);
         if (queryEmbedding == null) {
-            return createRetrievalTask(question, target, topK);
+            return createRetrievalTask(context, question, target, topK);
         }
-        return createRetrievalTask(question, target, topK, queryEmbedding);
+        return createRetrievalTask(context, question, target, topK, queryEmbedding);
     }
 
     private QueryEmbedding resolveQueryEmbedding(SearchContext context, String question, T target) {
@@ -175,6 +175,13 @@ public abstract class AbstractParallelRetriever<T> {
     protected abstract List<RetrievedChunk> createRetrievalTask(String question, T target, int topK);
 
     /**
+     * 创建单个检索任务，可读取 SearchContext 中的过滤、Trace 等上下文。
+     */
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context, String question, T target, int topK) {
+        return createRetrievalTask(question, target, topK);
+    }
+
+    /**
      * 使用已生成的 Query Embedding 创建单个检索任务。
      * 默认回退到旧逻辑，子类可覆写为 retrieveByVector。
      *
@@ -189,6 +196,17 @@ public abstract class AbstractParallelRetriever<T> {
                                                        int topK,
                                                        QueryEmbedding queryEmbedding) {
         return createRetrievalTask(question, target, topK);
+    }
+
+    /**
+     * 使用已生成的 Query Embedding 创建单个检索任务，可读取 SearchContext。
+     */
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context,
+                                                       String question,
+                                                       T target,
+                                                       int topK,
+                                                       QueryEmbedding queryEmbedding) {
+        return createRetrievalTask(question, target, topK, queryEmbedding);
     }
 
     /**

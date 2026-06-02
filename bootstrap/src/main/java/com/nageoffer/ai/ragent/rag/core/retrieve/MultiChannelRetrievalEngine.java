@@ -27,6 +27,7 @@ import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchChannel;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchChannelResult;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchContext;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchTarget;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.RetrievalFilterContextFactory;
 import com.nageoffer.ai.ragent.rag.core.retrieve.postprocessor.SearchResultPostProcessor;
 import com.nageoffer.ai.ragent.rag.dto.SubQuestionIntent;
 import lombok.RequiredArgsConstructor;
@@ -81,6 +82,9 @@ public class MultiChannelRetrievalEngine {
 
     /** Query Embedding 服务 */
     private final EmbeddingService embeddingService;
+
+    /** 全局过滤上下文工厂 */
+    private final RetrievalFilterContextFactory retrievalFilterContextFactory;
 
     /** 多通道并行检索线程池 */
     private final Executor ragRetrievalExecutor;
@@ -321,6 +325,7 @@ public class MultiChannelRetrievalEngine {
                 .rewrittenQuestion(question)
                 .intents(intents)
                 .topK(topK)
+                .filterContext(retrievalFilterContextFactory.create())
                 .queryEmbeddingContext(QueryEmbeddingContext.create(
                         question,
                         question,

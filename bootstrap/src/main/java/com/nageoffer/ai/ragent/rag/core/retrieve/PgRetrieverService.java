@@ -55,8 +55,16 @@ public class PgRetrieverService implements RetrieverService {
         jdbcTemplate.execute("SET hnsw.ef_search = 200");
 
         String vectorLiteral = toVectorLiteral(vector);
+        RetrievalSqlFilterBuilder.SqlFilter sqlFilter = RetrievalSqlFilterBuilder.build(request.getFilterContext());
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(vectorLiteral);
+        args.add(request.getCollectionName());
+        args.addAll(sqlFilter.args());
+        args.add(vectorLiteral);
+        args.add(request.getTopK());
+
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        return jdbcTemplate.query("""
+        String sql = """
                         SELECT
                             v.id,
                             v.content,
@@ -81,9 +89,11 @@ public class PgRetrieverService implements RetrieverService {
                             ON c.id = v.id
                             AND c.deleted = 0
                         WHERE v.metadata->>'collection_name' = ?
+                        %s
                         ORDER BY v.embedding <=> ?::vector
                         LIMIT ?
-                        """,
+                        """.formatted(sqlFilter.whereClause());
+        return jdbcTemplate.query(sql,
                 (rs, rowNum) -> RetrievedChunk.builder()
                         .id(rs.getString("id"))
                         .text(rs.getString("content"))
@@ -97,7 +107,7 @@ public class PgRetrieverService implements RetrieverService {
                         .sourceUrl(resolveSourceUrl(rs.getString("source_location"), rs.getString("file_url")))
                         .chunkIndex((Integer) rs.getObject("chunk_index"))
                         .build(),
-                vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
+                args.toArray()
         );
     }
 

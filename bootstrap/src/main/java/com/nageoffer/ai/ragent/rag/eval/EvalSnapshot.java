@@ -21,6 +21,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 单次评测执行快照，保存改写、意图、检索、MCP 与 Trace 结果。
@@ -45,6 +46,10 @@ public class EvalSnapshot {
 
     private List<String> retrievedContextDocIds;
 
+    private List<RetrievalChunkSnapshot> retrievedChunkDetails;
+
+    private Map<String, Integer> retrievalChannelCounts;
+
     private String mcpContext;
 
     private List<String> mcpToolIds;
@@ -58,4 +63,35 @@ public class EvalSnapshot {
     private String traceId;
 
     private long latencyMs;
+
+    @Data
+    @Builder
+    public static class RetrievalChunkSnapshot {
+
+        private String chunkId;
+
+        private String docId;
+
+        private String docName;
+
+        private String kbId;
+
+        private String kbName;
+
+        private String collectionName;
+
+        private Integer chunkIndex;
+
+        private Float score;
+
+        private String channelType;
+
+        private String channelName;
+
+        private Double fusionScore;
+
+        private Integer fusionChannelHits;
+
+        private Object fusionSources;
+    }
 }

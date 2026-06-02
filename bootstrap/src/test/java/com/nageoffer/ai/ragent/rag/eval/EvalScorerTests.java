@@ -19,7 +19,9 @@ package com.nageoffer.ai.ragent.rag.eval;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,13 +64,60 @@ class EvalScorerTests {
         EvalGroundTruth groundTruth = new EvalGroundTruth();
         groundTruth.setReferenceDocIds(List.of("FAQ_A"));
         EvalSnapshot snapshot = EvalSnapshot.builder()
-                .retrievedContextDocIds(List.of("FAQ_A", "FAQ_A", "FAQ_B", null))
+                .retrievedContextDocIds(Arrays.asList("FAQ_A", "FAQ_A", "FAQ_B", null))
                 .build();
 
         EvalMetricResult result = new RetrievalContextPrecisionScorer().score(null, groundTruth, snapshot).get(0);
 
         assertEquals("retrieval_context_precision", result.getMetricName());
         assertEquals(2.0d / 3.0d, result.getScore());
+        assertTrue(result.isPassed());
+    }
+
+    @Test
+    void channelRecallReportsBestSingleChannelCoverage() {
+        EvalGroundTruth groundTruth = new EvalGroundTruth();
+        groundTruth.setReferenceDocIds(List.of("FAQ_A", "FAQ_B"));
+        EvalSnapshot snapshot = EvalSnapshot.builder()
+                .retrievedChunkDetails(List.of(
+                        EvalSnapshot.RetrievalChunkSnapshot.builder()
+                                .docId("FAQ_A")
+                                .channelType("KEYWORD_ES")
+                                .build(),
+                        EvalSnapshot.RetrievalChunkSnapshot.builder()
+                                .docId("FAQ_B")
+                                .channelType("VECTOR_GLOBAL")
+                                .build()
+                ))
+                .build();
+
+        EvalMetricResult result = new RetrievalChannelRecallScorer().score(null, groundTruth, snapshot).get(0);
+
+        assertEquals("retrieval_channel_recall", result.getMetricName());
+        assertEquals(0.5d, result.getScore());
+        assertFalse(result.isPassed());
+    }
+
+    @Test
+    void channelRecallUsesFusionSourcesWhenPresent() {
+        EvalGroundTruth groundTruth = new EvalGroundTruth();
+        groundTruth.setReferenceDocIds(List.of("FAQ_A"));
+        EvalSnapshot snapshot = EvalSnapshot.builder()
+                .retrievedChunkDetails(List.of(
+                        EvalSnapshot.RetrievalChunkSnapshot.builder()
+                                .docId("FAQ_A")
+                                .channelType("VECTOR_GLOBAL")
+                                .fusionSources(Map.of(
+                                        "KeywordESSearch", Map.of("channelType", "KEYWORD_ES"),
+                                        "VectorGlobalSearch", Map.of("channelType", "VECTOR_GLOBAL")
+                                ))
+                                .build()
+                ))
+                .build();
+
+        EvalMetricResult result = new RetrievalChannelRecallScorer().score(null, groundTruth, snapshot).get(0);
+
+        assertEquals(1.0d, result.getScore());
         assertTrue(result.isPassed());
     }
 

@@ -22,6 +22,7 @@ import com.nageoffer.ai.ragent.rag.core.retrieve.QueryEmbedding;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieveRequest;
 import com.nageoffer.ai.ragent.rag.core.retrieve.RetrieverService;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.AbstractParallelRetriever;
+import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchContext;
 import com.nageoffer.ai.ragent.rag.core.retrieve.channel.SearchTarget;
 import lombok.extern.slf4j.Slf4j;
 
@@ -44,6 +45,14 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Searc
 
     @Override
     protected List<RetrievedChunk> createRetrievalTask(String question, SearchTarget target, int topK) {
+        return createRetrievalTask(null, question, target, topK);
+    }
+
+    @Override
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context,
+                                                       String question,
+                                                       SearchTarget target,
+                                                       int topK) {
         String collectionName = target.getCollectionName();
         try {
             return retrieverService.retrieve(
@@ -51,6 +60,7 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Searc
                             .collectionName(collectionName)
                             .query(question)
                             .topK(topK)
+                            .filterContext(context == null ? null : context.getFilterContext())
                             .build()
             );
         } catch (Exception e) {
@@ -64,6 +74,15 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Searc
                                                        SearchTarget target,
                                                        int topK,
                                                        QueryEmbedding queryEmbedding) {
+        return createRetrievalTask(null, question, target, topK, queryEmbedding);
+    }
+
+    @Override
+    protected List<RetrievedChunk> createRetrievalTask(SearchContext context,
+                                                       String question,
+                                                       SearchTarget target,
+                                                       int topK,
+                                                       QueryEmbedding queryEmbedding) {
         String collectionName = target.getCollectionName();
         try {
             return retrieverService.retrieveByVector(
@@ -72,6 +91,7 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Searc
                             .collectionName(collectionName)
                             .query(question)
                             .topK(topK)
+                            .filterContext(context == null ? null : context.getFilterContext())
                             .build()
             );
         } catch (Exception e) {

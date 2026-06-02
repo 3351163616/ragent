@@ -96,6 +96,7 @@ public class EvalRagRunner {
                 .collect(Collectors.toList());
         List<String> contextDocIds = resolveContextDocIds(uniqueChunks);
         List<String> docIds = dedupNonBlank(contextDocIds);
+        List<EvalSnapshot.RetrievalChunkSnapshot> chunkDetails = buildChunkDetails(uniqueChunks, contextDocIds);
 
         return EvalSnapshot.builder()
                 .originalQuestion(question)
@@ -106,6 +107,8 @@ public class EvalRagRunner {
                 .retrievedChunkIds(chunkIds)
                 .retrievedContexts(contexts)
                 .retrievedContextDocIds(contextDocIds)
+                .retrievedChunkDetails(chunkDetails)
+                .retrievalChannelCounts(channelCounts(chunkDetails))
                 .mcpContext(retrievalContext == null ? null : retrievalContext.getMcpContext())
                 .mcpToolIds(extractMcpToolIds(subIntents))
                 .hasMcp(retrievalContext != null && retrievalContext.hasMcp())
@@ -114,6 +117,48 @@ public class EvalRagRunner {
                 .traceId(RagTraceContext.getTraceId())
                 .latencyMs(latencyMs)
                 .build();
+    }
+
+    private List<EvalSnapshot.RetrievalChunkSnapshot> buildChunkDetails(List<RetrievedChunk> chunks,
+                                                                        List<String> contextDocIds) {
+        if (CollUtil.isEmpty(chunks)) {
+            return Collections.emptyList();
+        }
+        List<EvalSnapshot.RetrievalChunkSnapshot> details = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            RetrievedChunk chunk = chunks.get(i);
+            Map<String, Object> metadata = chunk.getMetadata() == null ? Map.of() : chunk.getMetadata();
+            String bizDocId = i < contextDocIds.size() ? contextDocIds.get(i) : null;
+            details.add(EvalSnapshot.RetrievalChunkSnapshot.builder()
+                    .chunkId(chunk.getId())
+                    .docId(StrUtil.blankToDefault(bizDocId, chunk.getDocId()))
+                    .docName(chunk.getDocName())
+                    .kbId(chunk.getKbId())
+                    .kbName(chunk.getKbName())
+                    .collectionName(chunk.getCollectionName())
+                    .chunkIndex(chunk.getChunkIndex())
+                    .score(chunk.getScore())
+                    .channelType(asString(metadata.get("channelType")))
+                    .channelName(asString(metadata.get("channelName")))
+                    .fusionScore(asDouble(metadata.get("fusionScore")))
+                    .fusionChannelHits(asInteger(metadata.get("fusionChannelHits")))
+                    .fusionSources(metadata.get("fusionSources"))
+                    .build());
+        }
+        return details;
+    }
+
+    private Map<String, Integer> channelCounts(List<EvalSnapshot.RetrievalChunkSnapshot> details) {
+        if (CollUtil.isEmpty(details)) {
+            return Map.of();
+        }
+        return details.stream()
+                .map(detail -> StrUtil.blankToDefault(detail.getChannelType(), "UNKNOWN"))
+                .collect(Collectors.groupingBy(
+                        channel -> channel,
+                        java.util.LinkedHashMap::new,
+                        Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
+                ));
     }
 
     private String generateAnswer(RewriteResult rewriteResult,
@@ -266,5 +311,37 @@ public class EvalRagRunner {
                 .map(node -> node.getMcpToolId())
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    private String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Double asDouble(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Integer asInteger(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }
