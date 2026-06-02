@@ -422,6 +422,7 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
                 Wrappers.lambdaQuery(IntentNodeDO.class)
                         .eq(IntentNodeDO::getDeleted, 0)
                         .eq(IntentNodeDO::getEnabled, 1)
+                        .orderByAsc(IntentNodeDO::getSortOrder, IntentNodeDO::getId)
         );
 
         if (intentNodeDOList.isEmpty()) {
