@@ -119,6 +119,7 @@ class LLMRequestLoggerTests {
                 Headers.of(),
                 "hello world",
                 "thinking",
+                null,
                 3,
                 true,
                 false,

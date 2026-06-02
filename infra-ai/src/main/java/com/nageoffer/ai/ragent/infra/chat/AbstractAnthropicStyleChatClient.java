@@ -248,6 +248,10 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
             thinking.addProperty("type", "enabled");
             thinking.addProperty("budget_tokens", maxTokens);
             body.add("thinking", thinking);
+        } else if (shouldDisableThinkingByDefault()) {
+            JsonObject thinking = new JsonObject();
+            thinking.addProperty("type", "disabled");
+            body.add("thinking", thinking);
         }
 
         JsonArray messagesArr = new JsonArray();
@@ -284,6 +288,10 @@ public abstract class AbstractAnthropicStyleChatClient implements ChatClient {
         }
 
         return body;
+    }
+
+    private boolean shouldDisableThinkingByDefault() {
+        return "mimo".equalsIgnoreCase(provider());
     }
 
     private Request.Builder newAuthorizedRequest(AIModelProperties.ProviderConfig provider, ModelTarget target) {
