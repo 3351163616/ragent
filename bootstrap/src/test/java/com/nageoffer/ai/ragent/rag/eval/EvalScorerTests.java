@@ -137,4 +137,34 @@ class EvalScorerTests {
         assertEquals(1.0d, result.getScore());
         assertTrue(result.isPassed());
     }
+
+    @Test
+    void answerRuleIgnoresFormattingWhitespaceAndPunctuation() {
+        EvalGroundTruth groundTruth = new EvalGroundTruth();
+        groundTruth.setRequiredFacts(List.of("3-4月", "员工 培训"));
+        EvalSnapshot snapshot = EvalSnapshot.builder()
+                .answer("年度计划一般在 **3～4月** 制定，并覆盖员工培训安排。")
+                .build();
+
+        EvalMetricResult result = new AnswerRuleScorer().score(null, groundTruth, snapshot).get(0);
+
+        assertEquals("answer_rule", result.getMetricName());
+        assertEquals(1.0d, result.getScore());
+        assertTrue(result.isPassed());
+    }
+
+    @Test
+    void answerRuleAppliesNormalizedForbiddenClaims() {
+        EvalGroundTruth groundTruth = new EvalGroundTruth();
+        groundTruth.setForbiddenClaims(List.of("公网直透内网服务"));
+        EvalSnapshot snapshot = EvalSnapshot.builder()
+                .answer("第三方回调可以**公网直透内网服务**。")
+                .build();
+
+        EvalMetricResult result = new AnswerRuleScorer().score(null, groundTruth, snapshot).get(0);
+
+        assertEquals("answer_rule", result.getMetricName());
+        assertEquals(0d, result.getScore());
+        assertFalse(result.isPassed());
+    }
 }

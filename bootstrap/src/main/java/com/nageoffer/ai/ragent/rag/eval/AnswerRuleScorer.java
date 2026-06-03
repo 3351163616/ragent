@@ -22,6 +22,8 @@ import cn.hutool.core.util.StrUtil;
 import com.nageoffer.ai.ragent.rag.dao.entity.EvalCaseDO;
 import org.springframework.stereotype.Component;
 
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 
@@ -50,13 +52,21 @@ public class AnswerRuleScorer implements EvalScorer {
                     .build());
         }
 
-        long requiredHits = safeList(groundTruth.getRequiredFacts()).stream()
-                .filter(answer::contains)
+        String normalizedAnswer = normalizeForMatch(answer);
+        List<String> requiredFacts = nonBlankList(groundTruth.getRequiredFacts());
+        List<String> forbiddenClaims = nonBlankList(groundTruth.getForbiddenClaims());
+
+        long requiredHits = requiredFacts.stream()
+                .map(this::normalizeForMatch)
+                .filter(StrUtil::isNotBlank)
+                .filter(normalizedAnswer::contains)
                 .count();
-        long forbiddenHits = safeList(groundTruth.getForbiddenClaims()).stream()
-                .filter(answer::contains)
+        long forbiddenHits = forbiddenClaims.stream()
+                .map(this::normalizeForMatch)
+                .filter(StrUtil::isNotBlank)
+                .filter(normalizedAnswer::contains)
                 .count();
-        int requiredSize = safeList(groundTruth.getRequiredFacts()).size();
+        int requiredSize = requiredFacts.size();
         double requiredScore = requiredSize == 0 ? 1.0d : requiredHits * 1.0d / requiredSize;
         boolean passed = requiredScore >= 1.0d && forbiddenHits == 0;
 
@@ -75,5 +85,20 @@ public class AnswerRuleScorer implements EvalScorer {
 
     private List<String> safeList(List<String> input) {
         return input == null ? List.of() : input;
+    }
+
+    private List<String> nonBlankList(List<String> input) {
+        return safeList(input).stream()
+                .filter(StrUtil::isNotBlank)
+                .toList();
+    }
+
+    private String normalizeForMatch(String input) {
+        if (StrUtil.isBlank(input)) {
+            return "";
+        }
+        return Normalizer.normalize(input, Normalizer.Form.NFKC)
+                .replaceAll("[\\p{P}\\p{S}\\s]+", "")
+                .toLowerCase(Locale.ROOT);
     }
 }
